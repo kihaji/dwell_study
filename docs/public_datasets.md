@@ -2,7 +2,8 @@
 
 Survey date: 2026-09-30. Every URL below was checked on that date with `curl -sIL` (HTTP status and
 `Content-Length` shown where the server reports it). Small files (< 50 MB) marked "inspected" were
-downloaded to a scratch directory to confirm their schema. Nothing here has been ingested yet.
+downloaded to a scratch directory to confirm their schema. What has been ingested is described in
+[Ingestion](#ingestion) at the end.
 
 This is PLAN step 9. Public data is for realism and scaling. Scored accuracy still comes from our
 synthetic data. The few public sets that have real stop labels are called out, because they can
@@ -231,3 +232,93 @@ curl $H -A "Mozilla/5.0 (X11; Linux x86_64)" "https://www.microsoft.com/en-us/re
 ```
 
 All of the above returned 200 on 2026-09-30.
+
+## Ingestion
+
+Code: `src/dwells/public/` (one module per dataset), tests in `tests/test_public.py`. Run:
+
+```bash
+uv run python -m dwells.public.build [--only staga|pol|foursquare|geolife]
+```
+
+Raw files go to `data/public/raw/<name>/` and are skipped if already there (urllib with a
+browser User-Agent). Each output `data/public/<dataset>/` is laid out like a synthetic dataset:
+master `events.parquet` (`id, timestamp, lat, lon, true_lat, true_lon, source, sig_a, sig_b, az,
+p_mixed, truth_dwell_id`), optional `truth_*.parquet`, and `meta.json` (source URLs, license,
+transformations, `sampling.describe` stats). Every output loads with `io.load_events(dir, shape)`
+for all five shapes. `p_mixed` is a seeded random 0.68/0.95 per event, as in the generator.
+
+**Error columns.** GeoLife, STAGA and PoL report no accuracy. They get a nominal circular GPS
+1-sigma of 8 m (`sig_a = sig_b = 8`, `az = 0`) and positions are not perturbed, so
+`true_lat/true_lon` equal `lat/lon`. So shapes 2/3 carry a constant, uninformative error on these
+sets, and "true" position means "as recorded", not ground truth. Foursquare is different, see below.
+
+| Dataset dir | Source | Events | Ids | Truth | Gap p50 / p95 | Time span (UTC) | Disk |
+|---|---|---|---|---|---|---|---|
+| `staga` | STAGA GPS + diary | 122,808 | 1 | 689 dwells | 10 s / 110 s | 1999-12-31 to 2000-05-06 (shifted dates) | 4 MB |
+| `pol` | PoL clean (`noiselevel0_dropoutlevel0`) + ground truth | 21,600,997 | 500 | 65,873 dwells | 60 s / 60 s | 2024-01-01 05:00 to 2024-01-31 05:01 | 48 MB |
+| `geolife_top20` | GeoLife 1.3, 20 users with most points | 14,768,085 | 20 | none | 2 s / 5 s | 2000 to 2012-07 | 285 MB |
+| `geolife_all` | GeoLife 1.3, all users | 24,876,977 | 182 | none | 2 s / 5 s | 2000 to 2012-07 | 465 MB |
+| `foursquare_nyc` | TSMC2014 NYC check-ins | 227,428 | 1,083 | 227,428 visits | 4.9 h / 5.0 d | 2012-04-03 to 2013-02-16 | 15 MB |
+
+### STAGA (`staga`, CC BY 4.0)
+- `ts` has +01:00/+02:00 offsets and is converted to UTC. The authors shifted dates to start 2000-01-01.
+- `truth_dwells` holds the 689 diary stop intervals (`dwell_id` 0..688 by start time). An event gets
+  `truth_dwell_id` when it falls in the closed interval `[start_ts, end_ts]`. This matches the raw
+  per-point `diary_label` exactly (78,865 stop and 43,943 trip points, zero disagreements).
+- Dwell `lat/lon` is the median of its points. Every interval has at least one point. `place_id`
+  groups dwell positions within 50 m by leader clustering, which gives 321 places. `category` and
+  `radius_m` are null.
+- Label semantics: these are diary stops, i.e. whatever the subject logged as a stop. There is **no
+  minimum duration**: the shortest is 59 s, 22% are under 5 min and 39% under 15 min (median
+  27 min). Short stops (traffic, transfers) will count as misses for algorithms tuned to 15+ min,
+  so filter the truth by duration to match the swept `min_duration`.
+- Surprises: the median gap is 10 s (p95 110 s). The survey's "~90 s effective" figure is a
+  long-run average that includes outages. The anonymized coordinates are not one rigid shift:
+  there are 23 jumps over 20 km between consecutive fixes, several of them about 2,000 km in
+  seconds (for example 2000-01-28 04:29). The displacement seems to change between segments, so
+  distances within a segment are fine but places cannot be compared across a jump.
+
+### PoL staypoint benchmark (`pol`, CC BY-NC-ND 4.0 per the paper)
+- **Local research use only. Do not redistribute the raw or derived data.**
+- Only the clean variant was ingested. All variants with noise above 0 are 245-400 MB, and the
+  repo README links only the OSF project, not individual files. The OSF v1 folder lists
+  dropout-only variants under 150 MB (`noiselevel0_dropoutlevel1` 94 MB,
+  `noiselevel0_dropoutlevel2` 83 MB at `https://osf.io/download/69ddb33792c88facca118339/`,
+  `noiselevel0_dropoutlevel3` 60 MB). They were not downloaded.
+- The naive `time` is treated as America/New_York local time (agents are home overnight at local
+  clock hours) and converted to UTC (+5 h in January). This only shifts times; labels and
+  intervals keep their alignment.
+- `truth_dwells` comes from `ground_truth.parquet`. The intervals are whole minutes and closed:
+  the tick at `endTime` counts as inside. `place_id = loc_id_per_user`, which is **per agent**
+  (0-12), not global. Dwell lat/lon comes from the ground truth. 97.7% of events fall inside a
+  staypoint.
+- Label semantics: simulator staypoints, with a minimum of 60 s. Only 0.3% are under 5 min and
+  1.1% under 15 min (median 3.1 h). During a stay the clean positions are exactly constant, so
+  clean-data detection is easy. The published numbers are for noise 25 m / dropout 2.
+
+### GeoLife 1.3 (`geolife_top20`, `geolife_all`, MSR research terms, cite Zheng et al.)
+- All 18,670 `.plt` files are parsed. `date + time` (GMT per the user guide) is used as UTC. `id`
+  is the user folder (`000`-`181`). One row with out-of-range coordinates is dropped. No truth:
+  `labels.txt` transport modes are not used.
+- `geolife_top20` is the 20 users with the most points (listed in `meta.json`). They hold 59% of
+  all points.
+- Surprises: timestamps have 1 s resolution and the files contain sub-second bursts and
+  overlapping trajectories. So 911,309 rows (3.7%) share an `(id, timestamp)` with another row,
+  often at different coordinates. These are kept as-is: dedupe or aggregate in the algorithm if
+  zero time deltas are a problem. Three points carry bogus year-2000 dates.
+- Build is about 35 s. Peak RSS is about 11 GB (validation loads every shape of the 25M-row frame).
+
+### Foursquare NYC (`foursquare_nyc`, research use, cite Yang et al. TSMC 2015)
+- `utcTimestamp` is already UTC (`+0000`). `timezoneOffset` is dropped. The file is latin-1.
+- Made adtech-like. `true_lat/true_lon` is the venue position, and `lat/lon` is the venue plus
+  synthetic error, seeded and reproducible. Each ping draws a source from `gps/wifi/cell` with the
+  generator's adtech weights 0.45/0.30/0.17 (renormalized, without ip/stale). The 1-sigma is
+  lognormal with medians 8 / 35 / 900 m. Axis ratios are U(1, 1.5), or U(1, 3) for cell, using
+  the generator's `_rand_axes`. The offset is drawn from the reported ellipse (honest, no
+  calibration noise). The resulting sig_a has p50 21 m and p95 1.7 km, and the realized offset
+  has p50 20 m and p95 1.7 km.
+- One event per check-in, with no burst pings added. 614 rows share an `(id, timestamp)`.
+- `truth_visits.parquet` (`id, venue_id, timestamp, lat, lon, category`) holds the raw check-ins at
+  venue coordinates. It is for qualitative checks (whether detected places line up with venues)
+  and is not dwell truth, since check-ins have no duration.

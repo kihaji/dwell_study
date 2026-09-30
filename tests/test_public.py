@@ -1,14 +1,20 @@
-import io as _io
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 import polars as pl
 
 from dwells import geo, io
-from dwells.public import cluster_places, foursquare, geolife, label_stops, nominal_error, pol, staga, write_dataset
-
-UTC = timezone.utc
+from dwells.public import (
+    cluster_places,
+    foursquare,
+    geolife,
+    label_stops,
+    nominal_error,
+    pol,
+    staga,
+    write_dataset,
+)
 
 STAGA_GPS = """ts,x,y,longitude,latitude,motion_score,diary_label
 2000-01-01 00:00:00+01:00,0,0,10.0,44.0,1.0,stop
@@ -78,11 +84,13 @@ def test_staga_parse_and_truth():
 
 
 def test_pol_localizes_and_labels():
+    # PoL times are naive local clock times
     tr = pl.DataFrame({"tick": [0, 1, 2, 3], "agent_id": [5, 5, 5, 5],
-                       "time": [datetime(2024, 1, 1, 0, m) for m in range(4)],
+                       "time": [datetime(2024, 1, 1, 0, m) for m in range(4)],  # noqa: DTZ001
                        "latitude": [33.7] * 4, "longitude": [-84.4] * 4})
-    gt = pl.DataFrame({"tick": [0], "agent_id": [5], "startTime": [datetime(2024, 1, 1, 0, 0)],
-                       "endTime": [datetime(2024, 1, 1, 0, 2)], "latitude": [33.7], "longitude": [-84.4],
+    gt = pl.DataFrame({"tick": [0], "agent_id": [5], "startTime": [datetime(2024, 1, 1, 0, 0)],  # noqa: DTZ001
+                       "endTime": [datetime(2024, 1, 1, 0, 2)],  # noqa: DTZ001
+                       "latitude": [33.7], "longitude": [-84.4],
                        "loc_id_per_user": [3], "num_visits": [1]})
     ev, dw = pol.to_dataset(tr, gt)
     assert ev["id"].to_list() == ["5"] * 4
