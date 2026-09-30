@@ -18,6 +18,7 @@ import fnmatch
 import hashlib
 import itertools
 import json
+import multiprocessing as mp
 import os
 import signal
 import time
@@ -152,7 +153,8 @@ def execute(tasks: list[dict], out: Path, workers: int, save_dir: Path | None = 
     rows = []
     # group tasks by dataset so each worker's cache is reused
     tasks.sort(key=lambda t: (t["dataset"], t["shape"], t["algo"]))
-    with ProcessPoolExecutor(max_workers=workers) as ex:
+    # spawn, not fork: polars' thread pool (already used by the parent) deadlocks forked children
+    with ProcessPoolExecutor(max_workers=workers, mp_context=mp.get_context("spawn")) as ex:
         futs = [ex.submit(run_task, t, save_dir) for t in tasks]
         for i, f in enumerate(as_completed(futs), 1):
             rows.append(f.result())
