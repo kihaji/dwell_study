@@ -31,8 +31,13 @@ def subset(src: str, dst: str, n_ids: int) -> None:
     ev.filter(pl.col("id").is_in(ids)).collect().write_parquet(d / "events.parquet")
     for f in s.glob("truth_*.parquet"):
         pl.read_parquet(f).filter(pl.col("id").is_in(ids)).write_parquet(d / f.name)
+    from dwells.generator.sampling import describe
+
     meta = json.loads((s / "meta.json").read_text()) if (s / "meta.json").exists() else {}
-    meta |= {"name": dst, "subset_of": src, "n_ids": n_ids}
+    sub = pl.read_parquet(d / "events.parquet")
+    meta |= {"name": dst, "subset_of": src, "n_ids": n_ids, "stats": describe(sub).to_dicts()[0]}
+    for f in d.glob("truth_*.parquet"):
+        meta[f.stem] = pl.scan_parquet(f).select(pl.len()).collect().item()
     (d / "meta.json").write_text(json.dumps(meta, indent=2, default=str))
 
 

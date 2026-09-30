@@ -4,6 +4,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .hypothesis/
-data/
-results/
-cache/
+/data/
+/results/
+/cache/
