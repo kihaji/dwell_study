@@ -132,8 +132,9 @@ def detect(events: pl.DataFrame, *, min_duration_s: float = 600, radius_m: float
             g = xs[ev_obs < 0]
             st, en, ce, cn = _dwells(g[:, 0], g[:, 1], min_len, radius_m)
             for i0, i1, x, y in zip(st, en, ce, cn):
-                t0, t1 = grid_t[i0], grid_t[i1 - 1]
-                if t1 - t0 < min_duration_s - dt_s:
+                # end = exclusive grid step, as in the original ((k0 + en) * dt)
+                t0, t1 = grid_t[i0], grid_t[i1 - 1] + dt_s
+                if t1 - t0 < min_duration_s:
                     continue
                 cnt = int(((t >= t0) & (t <= t1)).sum())
                 la, lo = geo.from_enu(x, y, lat0, lon0)  # same per-id frame as prepare()

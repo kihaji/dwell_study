@@ -1,0 +1,79 @@
+# Qualitative 1-5 scores with rationale (author judgment, see docs/results/scorecard.md).
+# spark: per-id partitionability (groupBy(id).applyInPandas), bounded memory, no global steps, executor deps.
+# extensibility: how easily the method can be modified / extended (new error models, outputs, constraints).
+# ease_of_use: install friction, API friction, parameter intuitiveness, determinism, license.
+
+[li_centroid]
+spark = [5, "single O(n) numba scan per id; O(1) state"]
+extensibility = [4, "tiny, readable kernel; no uncertainty hooks"]
+ease_of_use = [5, "3 intuitive params, no dependencies beyond numba"]
+
+[h3_cell_dwell]
+spark = [5, "per-event H3 map + per-id run scan; SQL-expressible"]
+extensibility = [3, "resolution rule tied to ellipse size; hard to tune"]
+ease_of_use = [3, "resolution chosen implicitly from error; fragile on precise data"]
+
+[kalman_dwell]
+spark = [3, "per id, but a dense time grid over the whole span: memory ~ span/dt x 16 floats"]
+extensibility = [3, "state-space model is extensible but the greedy grid step is ad hoc"]
+ease_of_use = [3, "grid step, acceleration noise and gap params interact"]
+
+[trackintel_sliding]
+spark = [3, "per-user sliding window; geopandas stack on executors"]
+extensibility = [3, "rich framework (trips, tours, locations) but fixed internals"]
+ease_of_use = [4, "clean install, good docs, minutes-based params"]
+
+[skmob_stops]
+spark = [2, "per-user python loop; slow on sparse data"]
+extensibility = [2, "dormant project; internals not designed for extension"]
+ease_of_use = [2, "breaks on shapely 2 / pandas 3 (shim needed), drops uid, loses trailing stay"]
+
+[fastmob_stays]
+spark = [4, "Rust kernel, batch over users, arrow-native; young dependency on executors"]
+extensibility = [3, "broad API (places, next-location, co-presence) but Rust core"]
+ease_of_use = [5, "pip install, polars/arrow in, very fast; must pass uid_col"]
+
+[movingpandas_stops]
+spark = [2, "per trajectory but quadratic in stay length and slow"]
+extensibility = [3, "good trajectory toolkit; detector itself simple"]
+ease_of_use = [3, "geopandas-heavy; no gap handling; splitting bug"]
+
+[infostop]
+spark = [1, "global Infomap clustering over all users' stationary events"]
+extensibility = [2, "C++ core, dormant"]
+ease_of_use = [2, "build dependency pin, non-deterministic, GPL-3.0 + AGPL infomap"]
+
+[st_dbscan]
+spark = [4, "per id; time-window neighbor scan O(n x window)"]
+extensibility = [4, "neighborhood predicate easy to change (e.g. uncertainty-aware)"]
+ease_of_use = [4, "familiar DBSCAN params"]
+
+[st_hdbscan]
+spark = [3, "per id sklearn HDBSCAN; memory heavy for large ids"]
+extensibility = [3, "needs spatial trim + run splitting to behave"]
+ease_of_use = [3, "sklearn epsilon bug under numpy 2.5; relative density surprises"]
+
+[ua_mahalanobis]
+spark = [5, "single O(n) numba scan per id; O(1) state"]
+extensibility = [5, "explicit Gaussian model: gate, coarse rule, place spread all pluggable"]
+ease_of_use = [4, "same 3 core params plus gate/coarse defaults that rarely need tuning"]
+
+[ua_segmentation]
+spark = [4, "per id PELT; near-linear with pruning, O(n) memory per segment"]
+extensibility = [5, "any additive likelihood cost can be plugged in"]
+ease_of_use = [4, "penalty parameter less intuitive than a radius"]
+
+[hmm_stay_move]
+spark = [5, "per id Viterbi, linear"]
+extensibility = [4, "more states (e.g. transport modes) or emissions can be added"]
+ease_of_use = [3, "priors (speed, mean stay/move) need care; sensitive to outliers"]
+
+[changepoint_pelt]
+spark = [2, "ruptures PELT is pure python and slow per id"]
+extensibility = [3, "ruptures offers many cost models"]
+ease_of_use = [3, "simple API but slow; penalty scale in m^2"]
+
+[h3_occupancy]
+spark = [5, "per-event H3 map + neighbor lists, per-id run scan; SQL-friendly"]
+extensibility = [4, "resolution / hysteresis / coarse rules are explicit"]
+ease_of_use = [4, "radius picks the resolution; few params"]

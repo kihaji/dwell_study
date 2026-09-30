@@ -1,16 +1,17 @@
-"""ST-HDBSCAN: HDBSCAN clustering with temporal run splitting, per id.
+"""ST-HDBSCAN: HDBSCAN clustering in space-time with temporal run splitting, per id.
 
-By default HDBSCAN (Campello et al. 2013; scikit-learn) clusters positions only
-with excess-of-mass selection ('leaf' over-fragmented stays). cluster_selection_epsilon
-is not used: scikit-learn 1.8's epsilon_search raises TypeError under numpy 2.5.
-Time enters by cutting each cluster into time-contiguous
-runs (common.contiguous_runs) and dropping runs shorter than ``min_duration_s``.
-Passing ``time_scale_s`` adds t * radius_m / time_scale_s as a third feature
-(classic ST-HDBSCAN); in testing that elongated stays along the time axis and
-merged them with approach/departure points, so it is off by default. HDBSCAN
-needs no global eps, so it adapts to varying density within one id. Because its
-density is relative, runs are trimmed to events within ``radius_m`` of the run's
-median center (common.trim_runs), and runs that lose most events are rejected.
+HDBSCAN (Campello et al. 2013; scikit-learn) clusters the features
+(x, y, t * radius_m / time_scale_s), time_scale_s = max_gap_s / 2 by default (classic
+ST-HDBSCAN), with excess-of-mass selection ('leaf' over-fragmented stays) and
+allow_single_cluster. time_scale_s=0 clusters positions only: better on CDR, worse on
+GPS (branch exp/st-hdbscan-spacetime). cluster_selection_epsilon is not used because
+scikit-learn 1.8's epsilon_search raises TypeError under numpy 2.5.
+
+Clusters are cut into time-contiguous runs (common.contiguous_runs). HDBSCAN density
+is relative (no absolute scale): it attaches approach points to stays and calls evenly
+sampled motion a cluster, so runs are trimmed to events within radius_m of their
+median center (common.trim_runs) and runs losing most events are rejected. Runs
+shorter than min_duration_s are dropped.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ def detect(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float
            selection: str = "eom",
            **_) -> pl.DataFrame:
     a = prepare(events)
-    ts = time_scale_s or max_gap_s / 2  # EXPERIMENT: classic space-time features on by default
+    ts = max_gap_s / 2 if time_scale_s is None else time_scale_s  # 0 -> spatial only
     labels = np.full(len(a.t), -1, np.int64)
     off = 0
     for k in range(len(a.starts) - 1):

@@ -11,9 +11,9 @@ LAT0, LON0 = 40.0, -75.0
 T0 = 1_700_000_000.0
 
 
-def track(segments, seed=0, sigma=5.0, shape=2):
+def track(segments, seed=0, sigma=5.0, shape=2, step_s=60):
     """segments: list of ("stay", x, y, minutes) | ("move", x1, y1, minutes) | ("gap", minutes).
-    One fix per minute; stays jitter with sigma meters."""
+    One fix every step_s seconds; stays jitter with sigma meters."""
     rng = np.random.default_rng(seed)
     t, xs, ys = [], [], []
     now, x, y = T0, 0.0, 0.0
@@ -22,7 +22,7 @@ def track(segments, seed=0, sigma=5.0, shape=2):
             now += seg[1] * 60
             continue
         kind, tx, ty, mins = seg
-        n = int(mins)
+        n = int(mins * 60 / step_s)
         for i in range(n):
             if kind == "stay":
                 x, y = tx, ty
@@ -33,7 +33,7 @@ def track(segments, seed=0, sigma=5.0, shape=2):
             t.append(now)
             xs.append(px)
             ys.append(py)
-            now += 60
+            now += step_s
         x, y = tx, ty
     lat, lon = from_enu(np.array(xs), np.array(ys), LAT0, LON0)
     df = pl.DataFrame({"id": "a", "lat": lat, "lon": lon, "timestamp": (np.array(t) * 1e6).astype(np.int64)})
@@ -68,6 +68,13 @@ KNOWN_LIMITATIONS = {
     ("skmob_stops", "test_long_gap_splits"): "no include_last: each gap-split segment ends in an open stay",
     ("skmob_stops", "test_short_stay_below_min_duration_dropped"): "no include_last: final stay is the open one",
     ("skmob_stops", "test_multiple_ids_kept_separate"): "no include_last: each id loses its final stay",
+    ("skmob_stops", "test_dense_sampling_drive_splits_stays"): "no include_last: final stay lost",
+    ("skmob_stops", "test_slow_walk_splits_stays"): "no include_last: final stay lost",
+    ("h3_cell_dwell", "test_dense_sampling_drive_splits_stays"): "fine ellipse-sized cells fragment the stays",
+    ("h3_cell_dwell", "test_slow_walk_splits_stays"): "fine ellipse-sized cells fragment the stays",
+    # density chaining: consecutive travel fixes closer than radius_m link the two stays
+    ("st_dbscan", "test_dense_sampling_drive_splits_stays"): "5 s fixes 50 m apart chain the stays (one 65-min dwell)",
+    ("st_dbscan", "test_slow_walk_splits_stays"): "walking fixes 83 m apart chain the stays (one 89-min dwell)",
 }
 
 
@@ -111,3 +118,15 @@ def test_multiple_ids_kept_separate(algo):
     d = algo.detect(schema.validate_events(pl.concat([a, b])), **PARAMS)
     assert sorted(d["id"].unique().to_list()) == ["a", "b"]
     assert d.filter(pl.col("id") == "b").height == 3
+
+
+def test_dense_sampling_drive_splits_stays(algo):
+    # 5 s fixes; 3 km drive at 10 m/s between two 30-min stays
+    ev = track([("stay", 0, 0, 30), ("move", 3000, 0, 5), ("stay", 3000, 0, 30)], step_s=5)
+    assert algo.detect(ev, **PARAMS).height == 2
+
+
+def test_slow_walk_splits_stays(algo):
+    # 1-min fixes; 30-min walk at ~1.4 m/s (2.5 km) between two 30-min stays
+    ev = track([("stay", 0, 0, 30), ("move", 2500, 0, 30), ("stay", 2500, 0, 30)])
+    assert algo.detect(ev, **PARAMS).height == 2

@@ -6,9 +6,10 @@
   cell; a later informative event continues the run if its cell is the anchor or
   one of the anchor's 6 neighbors (grid_disk k=1). This hysteresis absorbs the
   boundary flicker that fragments plain cell runs (see h3_cell_dwell).
-* Accuracy-adaptive: an event whose 1-sigma exceeds ``coarse_factor`` x the edge
+* Accuracy-adaptive: an event whose 1-sigma exceeds ``coarse_factor`` (3) x the edge
   length cannot tell neighboring cells apart, so it is ignored: it never starts,
-  breaks or extends a run (like ua_mahalanobis coarse handling).
+  breaks or extends a run (like ua_mahalanobis coarse handling). A 1x threshold made
+  every CDR event coarse in the dev sweep (F1 0.42 -> 0.23).
 * A run closes when an informative event falls outside the anchor's disk (after
   ``k_break`` consecutive misses, so single outliers are skipped) or on a gap >
   max_gap_s; runs spanning >= min_duration_s with >= min_events informative events
@@ -108,7 +109,7 @@ def _kernel(starts, t, cell_idx, disk, coarse, max_gap, k_break, min_events, min
 
 
 def detect(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float = 100,
-           max_gap_s: float = 3600, k_break: int = 2, min_events: int = 2, coarse_factor: float = 1.0,
+           max_gap_s: float = 3600, k_break: int = 2, min_events: int = 2, coarse_factor: float = 3.0,
            default_sigma_m: float = 10.0, **_) -> pl.DataFrame:
     a = prepare(events, default_sigma_m)
     r = resolution_for(radius_m)

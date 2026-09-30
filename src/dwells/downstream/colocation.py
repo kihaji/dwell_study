@@ -7,10 +7,13 @@ spatially matched by one of:
                (chi2_2 at 95%). S = the dwell's 1-sigma centroid ellipse when the
                detector reports one, plus within-place spread (radius_m / 2)^2.
 * h3           same H3 cell or neighbors at the finest resolution with edge >= radius_m / 2
-               (neighbors at edge >= radius_m would accept pairs ~6 edges = 600 m apart).
+               (adjacent cells accept pairs up to ~3.6 edges apart, so edge >= radius_m
+               would accept ~360 m at radius 100).
 diff_time: dwells of different ids within radius_m of each other that do not
-overlap in time but start within window_s of each other (shared place, different
-times: shift workers, the same gym).
+overlap in time and where the later one starts within window_s after the earlier
+one ends (gap >= 0, as in metrics.colocation_truth; shared place, different times:
+shift workers, the same gym). For these rows overlap_start/overlap_end hold the gap
+interval (earlier end, later start).
 
 Candidate pairs come from an H3 bucket join (each dwell's cell + k=1 ring at a
 bucket resolution covering the match scale), so cost grows with local density, not
@@ -87,8 +90,10 @@ def same_time(dwells: pl.DataFrame, method: str = "distance", radius_m: float = 
     if dwells.height < 2:
         return schema.empty(schema.COLOCATIONS)
     scale = radius_m
-    if method == "mahalanobis" and not dwells["sigma_major"].is_null().all():
-        scale = max(radius_m, 3 * float(dwells["sigma_major"].quantile(0.95)))
+    if method == "mahalanobis":
+        # the chi2 gate reaches ~2.45 x the combined 1-sigma; size buckets to cover it
+        sig = radius_m / 2 if dwells["sigma_major"].is_null().all() else float(dwells["sigma_major"].quantile(0.95))
+        scale = 2.45 * np.sqrt(2 * (sig**2 + (radius_m / 2) ** 2))
     c = _candidates(dwells, scale).with_columns(
         overlap_start=pl.max_horizontal("start_ts", "start_ts_b"),
         overlap_end=pl.min_horizontal("end_ts", "end_ts_b"),
@@ -111,7 +116,8 @@ def diff_time(dwells: pl.DataFrame, radius_m: float = 100, window_s: float = 7 *
         overlap_end=pl.min_horizontal("end_ts", "end_ts_b"),
     )
     gap = (pl.col("overlap_start") - pl.col("overlap_end")).dt.total_seconds()
-    c = c.filter((gap > 0) & (gap <= window_s))
+    c = c.filter((gap >= 0) & (gap <= window_s)).with_columns(
+        overlap_start=pl.col("overlap_end"), overlap_end=pl.col("overlap_start"))  # gap interval
     c = c.filter(pl.Series(_spatial_ok(c, "distance", radius_m)))
     c = _orient(c).with_columns(
         lat=(pl.col("lat") + pl.col("lat_b")) / 2, lon=(pl.col("lon") + pl.col("lon_b")) / 2,

@@ -5,9 +5,9 @@ collapsed. Models (all with backoff to lower orders, then to visit frequency):
 * most_frequent  order-0: the id's most visited places.
 * markov1        P(next | current place).
 * markov2        P(next | previous, current).
-* markov1_time   P(next | current place, departure time bucket) where the bucket is
-                 weekday/weekend x 4-hour block of the departure (= visit end if
-                 available, else next start) in local time.
+* markov1_time   P(next | current place, time bucket) where the bucket is
+                 weekday/weekend x 4-hour block of the *arrival* at the current place
+                 (sequences carry start times only) in local time.
 ``evaluate`` trains on each id's first (1 - test_frac) of visits and scores every
 test step with the true history as context: acc@k and mean reciprocal rank.
 """
@@ -56,6 +56,11 @@ class Predictor:
 
     def rank(self, uid, hist, times) -> list:
         """Places ordered by predicted probability, given the visit history."""
+        return [p for p, _ in self.ranked(uid, hist, times)]
+
+    def ranked(self, uid, hist, times) -> list:
+        """(place, probability) pairs; the probability comes from the most specific
+        context table that proposes the place (backoff tables fill the rest)."""
         tables = []
         if self.model == "markov2" and len(hist) >= 2:
             tables.append(self.c2.get((uid, hist[-2], hist[-1])))
@@ -68,10 +73,11 @@ class Predictor:
         for t in tables:
             if not t:
                 continue
-            for p, _ in t.most_common():
+            tot = sum(v for p, v in t.items() if not hist or p != hist[-1]) or 1
+            for p, c in t.most_common():
                 if p not in seen and (not hist or p != hist[-1]):
                     seen.add(p)
-                    out.append(p)
+                    out.append((p, c / tot))
         return out
 
     def predict_top(self, seq: pl.DataFrame, n: int = 3) -> pl.DataFrame:
@@ -79,10 +85,8 @@ class Predictor:
         for (uid,), g in _collapse(seq).group_by("id", maintain_order=True):
             places = g["place_id"].to_list()
             times = g["start_ts"].to_list()
-            r = self.rank(uid, places, times)
-            tot = sum(self.c1.get((uid, places[-1]), {}).values()) or 1
-            for k, p in enumerate(r[:n]):
-                rows.append((uid, places[-1], k + 1, p, self.c1.get((uid, places[-1]), {}).get(p, 0) / tot))
+            for k, (p, prob) in enumerate(self.ranked(uid, places, times)[:n]):
+                rows.append((uid, places[-1], k + 1, p, prob))
         return pl.DataFrame(rows, schema=schema.PREDICTIONS, orient="row")
 
 

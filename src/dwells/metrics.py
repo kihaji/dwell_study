@@ -145,7 +145,8 @@ def colocation_truth(truth_dwells: pl.DataFrame, min_overlap_s: float = 900,
     same = j.filter(pl.col("overlap_s") >= min_overlap_s).with_columns(kind=pl.lit("same_time"))
     diff = j.filter(
         (pl.col("overlap_s") <= 0) & (-pl.col("overlap_s") <= diff_time_window_s)
-    ).with_columns(kind=pl.lit("diff_time"), overlap_s=pl.lit(0, dtype=pl.Int64))
+    ).with_columns(kind=pl.lit("diff_time"), overlap_s=pl.lit(0, dtype=pl.Int64),
+                   overlap_start=pl.col("overlap_end"), overlap_end=pl.col("overlap_start"))  # gap interval
     cols = ["id_a", "id_b", "place_id", "lat", "lon", "overlap_start", "overlap_end", "overlap_s", "kind"]
     return pl.concat([
         x.rename({"id": "id_a"}).select(cols).with_columns(pl.col("overlap_s").cast(pl.Int64))

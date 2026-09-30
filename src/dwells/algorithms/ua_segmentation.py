@@ -11,11 +11,15 @@ covariance and v = radius_m^2 / 4 the within-place spread (as in ua_mahalanobis)
 Prefix sums of W, W z and z^T W z give each piece's cost in O(1), and PELT pruning
 (Killick et al. 2012) keeps the search near-linear. The cost is a negative
 log-likelihood, so this is maximum-a-posteriori segmentation under a
-constant-hazard change-point prior (penalty = -log prior odds of a change).
+constant-hazard change-point prior (penalty = -log prior odds of a change); it
+is penalized profile likelihood, not Adams & MacKay's online Bayesian method,
+which is cited only as related work.
 
 Pieces become dwells when they have >= ``min_events`` informative events, span >=
-``min_duration_s`` and fit the stationary model (reduced chi-square of the
-residuals <= ``max_chi2_per_event``). Coarse events carry little weight so they
+``min_duration_s`` and fit the stationary model: chi-square of the residuals
+divided by (n - 1) <= ``max_chi2_per_event``. With 2 dof per event that statistic
+has expectation ~2 under the model (not 1), so the default 3.0 corresponds to a
+conventional reduced chi-square of 1.5. Coarse events carry little weight so they
 neither create change points nor pull the centroid; like ua_mahalanobis, they do
 not define a dwell's start/end.
 """

@@ -8,12 +8,20 @@ consecutive positions within a place are correlated, so the jitter is much small
 than two independent uniform draws over the place, which made travel steps look
 like within-place jumps in testing):
 
-* stay: d ~ Rayleigh(s_i)
-* move: d ~ Rayleigh(sqrt(s_i^2 + (speed_ms * dt_i)^2))
+* stay: d ~ Rayleigh(s_i), with the within-place jitter term scaled by
+  min(1, dt_i / jitter_tau_s): over a few seconds a person barely moves inside a
+  place, so dense sampling must not make travel steps look like jitter.
+* move: d ~ 0.5 Rayleigh(sqrt(s_i^2 + (walk_ms dt_i)^2)) + 0.5 Rayleigh(sqrt(s_i^2 +
+  (speed_ms dt_i)^2)): a walk/drive mixture, so slow walking is not mistaken for staying.
 
-Transitions are time-inhomogeneous (continuous-time Markov chain): P(stay->move) =
-1 - exp(-dt / mean_stay_s), P(move->stay) = 1 - exp(-dt / mean_move_s), so long
-gaps are naturally uncertain. Viterbi decoding (numba) gives the state path; maximal
+Transitions are time-inhomogeneous: P(stay->move) = 1 - exp(-dt / mean_stay_s),
+P(move->stay) = 1 - exp(-dt / mean_move_s) (the probability of leaving the state
+within dt, a first-jump approximation of a continuous-time chain), so long gaps are
+naturally uncertain.
+Revision: the first version used a constant jitter and a single 5 m/s move speed;
+it merged stays across dense-sampled drives and slow walks (found in code review,
+now covered by the contract tests test_dense_sampling_drive_splits_stays and
+test_slow_walk_splits_stays). Viterbi decoding (numba) gives the state path; maximal
 runs of 'stay' intervals become stays spanning their endpoint events. Coarse events
 (sigma > coarse_factor * radius_m) are not allowed to define a stay's first/last
 event. Stays need >= ``min_events`` informative events and >= ``min_duration_s``.
@@ -41,7 +49,7 @@ def _rayleigh_log(d, s2):
 
 
 @numba.njit(cache=True)
-def _viterbi(seg_starts, t, x, y, var, jitter, speed, tau_stay, tau_move):
+def _viterbi(seg_starts, t, x, y, var, jitter, jitter_tau, walk, speed, tau_stay, tau_move):
     """Returns per-interval state (index i = interval (i-1, i)); 1 = stay, 0 = move, -1 = none."""
     n = len(t)
     state = np.full(n, -1, np.int64)
@@ -56,9 +64,10 @@ def _viterbi(seg_starts, t, x, y, var, jitter, speed, tau_stay, tau_move):
             i = a + j + 1
             dt = max(t[i] - t[i - 1], 1e-3)
             d = np.hypot(x[i] - x[i - 1], y[i] - y[i - 1])
-            s2 = var[i] + var[i - 1] + jitter
-            e_stay = _rayleigh_log(d, s2)
-            e_move = _rayleigh_log(d, s2 + (speed * dt) ** 2)
+            s2 = var[i] + var[i - 1]
+            e_stay = _rayleigh_log(d, s2 + jitter * min(1.0, dt / jitter_tau))
+            e_move = np.logaddexp(_rayleigh_log(d, s2 + (walk * dt) ** 2),
+                                  _rayleigh_log(d, s2 + (speed * dt) ** 2)) + np.log(0.5)
             p_sm = 1 - np.exp(-dt / tau_stay)
             p_ms = 1 - np.exp(-dt / tau_move)
             if j == 0:
@@ -79,14 +88,16 @@ def _viterbi(seg_starts, t, x, y, var, jitter, speed, tau_stay, tau_move):
 
 
 def detect(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float = 100,
-           max_gap_s: float = 3600, speed_ms: float = 5.0, mean_stay_s: float = 7200,
+           max_gap_s: float = 3600, speed_ms: float = 10.0, walk_ms: float = 1.4,
+           jitter_tau_s: float = 300.0, mean_stay_s: float = 7200,
            mean_move_s: float = 900, coarse_factor: float = 3.0, min_events: int = 2,
            default_sigma_m: float = 10.0, **_) -> pl.DataFrame:
     a = prepare(events, default_sigma_m)
     var = (a.cee + a.cnn) / 2
     seg = gap_segments(events, max_gap_s).to_numpy()
     seg_starts = np.r_[0, np.flatnonzero(np.diff(seg)) + 1, len(seg)]
-    st = _viterbi(seg_starts, a.t, a.x, a.y, var, (radius_m / 3) ** 2, speed_ms, mean_stay_s, mean_move_s)
+    st = _viterbi(seg_starts, a.t, a.x, a.y, var, (radius_m / 3) ** 2, jitter_tau_s, walk_ms, speed_ms,
+                  mean_stay_s, mean_move_s)
     informative = np.sqrt(var) <= coarse_factor * radius_m
     labels = np.full(len(st), -1, np.int64)
     nxt = 0
