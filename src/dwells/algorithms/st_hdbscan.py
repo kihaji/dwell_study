@@ -32,7 +32,7 @@ def detect(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float
            selection: str = "eom",
            **_) -> pl.DataFrame:
     a = prepare(events)
-    ts = time_scale_s
+    ts = time_scale_s or max_gap_s / 2  # EXPERIMENT: classic space-time features on by default
     labels = np.full(len(a.t), -1, np.int64)
     off = 0
     for k in range(len(a.starts) - 1):
