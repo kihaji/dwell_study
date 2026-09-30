@@ -91,3 +91,15 @@ def fastmob_stays(df: pl.DataFrame, min_duration_s, radius_m, max_gap_s, include
 - Hariharan & Toyama (2004), Project Lachesis (algorithm origin, via skmob). http://kentarotoyama.com/papers/Hariharan_2004_Project_Lachesis.pdf
 - Pappalardo et al. (2022), scikit-mobility, *JSS* 103(4) (the API it mirrors).
 - H3: https://h3geo.org/ ; RECAST: Vaz de Melo, P. O. S. et al. (2015). RECAST: Telling apart social and random relationships in dynamic networks. *Performance Evaluation* 87.
+
+## Wrapper in this repo
+
+`src/dwells/algorithms/fastmob_stays.py` (`NAME = "fastmob_stays"`).
+
+- Parameter mapping: `spatial_radius_km = radius_m / 1000`, `minutes_for_a_stop = min_duration_s / 60`, `no_data_for_minutes = max_gap_s / 60`, `include_last=True`.
+- Gaps: each id is split on gaps > `max_gap_s`, and the segment number is passed as `uid_col="seg"` (explicitly) in one batch call on the polars frame.
+- Native semantics kept: an anchor radius with `>=` tests, end = first fix outside (the last fix for the `include_last` stay), and a median centroid.
+- Timestamps come back naive and **truncated to milliseconds**. The wrapper snaps start and end back to the real fix timestamps (forward as-of join per segment), which also restores UTC.
+- `n_events`: fastmob reports no membership, so the wrapper counts the id's events in `[start, end)`, plus the end fix when it is the segment's last fix and lies within `radius_m` of the anchor (the `include_last` stay).
+- Cross-check: start, end and `n_events` are identical to `trackintel_sliding` on dev_urban_gps.
+- Throughput: 54k GPS events in 0.03 s, 890k GPS events in 0.09 s (~10M ev/s), and 86k CDR events in 0.04 s.

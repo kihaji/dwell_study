@@ -90,3 +90,12 @@ def movingpandas_stays(df: pl.DataFrame, min_duration_s, radius_m, max_gap_s):
 - Graser, A. (2019). MovingPandas: Efficient structures for movement data in Python. *GI_Forum* 7(1), 54–68. https://doi.org/10.1553/giscience2019_01_s54
 - Andrienko, N., Andrienko, G. (2011). Spatial generalization and aggregation of massive movement data. *IEEE TVCG* 17(2) (basis of the aggregator).
 - Docs: https://movingpandas.readthedocs.io/ · Repo: https://github.com/movingpandas/movingpandas · Stop detection example: https://github.com/movingpandas/movingpandas-examples
+
+## Wrapper in this repo
+
+`src/dwells/algorithms/movingpandas_stops.py` (`NAME = "movingpandas_stops"`).
+
+- Parameter mapping: `max_diameter = 2 * radius_m` (metres, geodesic) and `min_duration = timedelta(seconds=min_duration_s)`.
+- Gaps: MovingPandas has none. Each id is split on gaps > `max_gap_s` by the wrapper, not with the splitters that drop zero-length pieces. Each segment becomes one `Trajectory` via `TrajectoryCollection(traj_id_col="seg")`, which does not apply the length filter when `min_length=0`. Timestamps are passed as naive UTC to avoid the `TimeZoneWarning`, and UTC is restored afterwards.
+- Native semantics kept: the MRR-diagonal < diameter window, start = first window fix, end = **last fix inside**, and the open stop at a segment's end is emitted. Time ranges come from `get_stop_time_ranges`. The members are the events in `[start, end]`, and their median lat/lon is the centroid, which is the same as what `get_stop_points` computes but without its per-stop pandas `.at` loop. Duplicate timestamps, which MovingPandas drops, are counted in `n_events`.
+- Throughput: the slowest library. 54k GPS events take 7.3 s (~7.3k ev/s), 890k GPS events take 114 s (~7.8k ev/s), and 86k CDR events take 20 s (~4.3k ev/s). A 50-combo sweep on 1M events is about 1.5–2 h single-core, so subsample ids or parallelise over segments (`n_processes`) if needed.

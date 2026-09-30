@@ -99,3 +99,13 @@ The snippet was checked on toy data: it recovers all four stays, including the f
 - Aslak, U., Alessandretti, L. (2020). Infostop: Scalable stop-location detection in multi-user mobility data. arXiv:2003.14370. https://arxiv.org/abs/2003.14370
 - Rosvall, M., Bergstrom, C. T. (2008). Maps of random walks on complex networks reveal community structure. *PNAS* 105(4), 1118–1123 (Infomap). https://www.mapequation.org/
 - Repo: https://github.com/ulfaslak/infostop · Docs: https://infostop.readthedocs.io/
+
+## Wrapper in this repo
+
+`src/dwells/algorithms/infostop.py` (`NAME = "infostop"`).
+
+- Parameter mapping: `r1 = r2 = radius_m`, `min_staying_time = min_duration_s`, `max_time_between = max_gap_s`, and the defaults `min_size=2` and `label_singleton=True`. The library asserts `max_gap_s > min_duration_s`, so a sweep must respect that.
+- Gaps: each id is split on gaps > `max_gap_s`, and all segments go to **one** `fit_predict` call as a list of `[lat, lon, t_seconds]` arrays. This is multi-user mode, so place labels are shared across ids.
+- Visits are built from label runs: consecutive fixes with the same label within a segment form one visit (`compute_intervals` is not used because it drops the last stop). The centroid is the median of the visit's fixes, start and end are the first and last fix inside, and `n_events` is the run length.
+- "No stop events found" is caught and returns an empty frame. Infomap is unseeded; only run merging (adjacent stationary events with the same place label) depends on it.
+- Throughput: 54k GPS events in 0.09 s (~570k ev/s), 890k GPS events in 4.4 s (~200k ev/s, super-linear because of the global BallTree + Infomap), and 86k CDR events in 0.6 s.

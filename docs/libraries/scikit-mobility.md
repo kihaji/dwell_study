@@ -106,3 +106,14 @@ def skmob_stays(df: pl.DataFrame, min_duration_s, radius_m, max_gap_s):
 - Hariharan, R., Toyama, K. (2004). Project Lachesis: Parsing and modeling location histories. *GIScience 2004*, LNCS 3234, 106–124. http://kentarotoyama.com/papers/Hariharan_2004_Project_Lachesis.pdf
 - Zheng, Y. (2015). Trajectory data mining: an overview. *ACM TIST* 6(3).
 - Docs: https://scikit-mobility.github.io/scikit-mobility/ · Repo: https://github.com/scikit-mobility/scikit-mobility
+
+## Wrapper in this repo
+
+`src/dwells/algorithms/skmob_stops.py` (`NAME = "skmob_stops"`).
+
+- Parameter mapping: `spatial_radius_km = radius_m / 1000`, `minutes_for_a_stop = min_duration_s / 60`, `no_data_for_minutes = max_gap_s / 60`, `leaving_time=True`, `min_speed_kmh=None`.
+- Gaps: each id is split on gaps > `max_gap_s`, and the segment number is passed as skmob's `uid` in **one** `stops` call. The pandas-3 uid loss is handled by carrying a copy of the segment column: `_stops_array` copies the other columns of each stop's last inside row into the output.
+- `import shapely.ops as so; so.cascaded_union = so.unary_union` runs before `import skmob`.
+- Native semantics kept: an anchor (first point) radius with strict `>` tests, end = `leaving_datetime` (first fix outside), and a coordinate-wise median centroid. `n_events` counts the id's events in `[start, end)`.
+- **No include_last.** The stay open at the end of every segment (before every gap and at the end of the track) is never emitted, and the wrapper does not add one. As a result it fails 4 of the 5 contract tests (easy dwells, long-gap split, short-stay, multi-id: each loses its final stay). These are listed as known limitations. On real data it loses one stay per segment compared with trackintel/fastmob (1386 vs 1420 on dev_urban_gps). All other stays match trackintel's start, end and `n_events` exactly.
+- Throughput: 54k GPS events in 0.4 s (~145k ev/s), 890k GPS events in 4.7 s (~190k ev/s). Sparse CDR data runs at ~4.6k ev/s (skmob's groupby.apply costs ~3 ms per segment).

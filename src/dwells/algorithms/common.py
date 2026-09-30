@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numba
 import numpy as np
 import polars as pl
 
@@ -49,11 +50,13 @@ def gap_segments(events: pl.DataFrame, max_gap_s: float) -> pl.Series:
 
 def dwells_from_labels(events: pl.DataFrame, labels: np.ndarray, min_duration_s: float,
                        centroid: str = "mean", min_events: int = 1,
-                       default_sigma_m: float = 10.0) -> pl.DataFrame:
+                       default_sigma_m: float = 10.0, extra_var: float = 0.0) -> pl.DataFrame:
     """Aggregate events with label >= 0 into dwells (labels must be unique across ids).
 
     Start/end are the first/last event times. ``centroid``: mean | median | fused
-    (inverse-covariance weighted, which also yields a 1-sigma centroid ellipse).
+    (inverse-covariance weighted, which also yields a 1-sigma centroid ellipse);
+    ``extra_var`` (m^2) is added to each event's east/north variance before fusing,
+    e.g. the spread of true positions within a place.
     """
     ev = events.with_columns(label=pl.Series(labels, dtype=pl.Int64)).filter(pl.col("label") >= 0)
     if ev.height == 0:
@@ -66,7 +69,7 @@ def dwells_from_labels(events: pl.DataFrame, labels: np.ndarray, min_duration_s:
         agg += [pl.col("lat").mean(), pl.col("lon").mean()]
     out = ev.group_by("id", "label", maintain_order=True).agg(agg)
     if centroid == "fused":
-        out = out.drop("lat", "lon").join(_fused(ev, default_sigma_m), on="label")
+        out = out.drop("lat", "lon").join(_fused(ev, default_sigma_m, extra_var), on="label")
     out = out.filter(
         ((pl.col("end_ts") - pl.col("start_ts")).dt.total_seconds() >= min_duration_s)
         & (pl.col("n_events") >= min_events)
@@ -74,8 +77,9 @@ def dwells_from_labels(events: pl.DataFrame, labels: np.ndarray, min_duration_s:
     return schema.validate_dwells(out.drop("label"))
 
 
-def _fused(ev: pl.DataFrame, default_sigma_m: float) -> pl.DataFrame:
-    ev = with_covariance(ev, default_sigma_m)
+def _fused(ev: pl.DataFrame, default_sigma_m: float, extra_var: float = 0.0) -> pl.DataFrame:
+    ev = with_covariance(ev, default_sigma_m).with_columns(
+        pl.col("cov_ee") + extra_var, pl.col("cov_nn") + extra_var)
     det = pl.col("cov_ee") * pl.col("cov_nn") - pl.col("cov_en") ** 2
     ev = ev.with_columns(iee=pl.col("cov_nn") / det, inn=pl.col("cov_ee") / det, ien=-pl.col("cov_en") / det,
                          lat0=pl.col("lat").mean().over("label"), lon0=pl.col("lon").mean().over("label"))
@@ -99,3 +103,58 @@ def per_id_pandas(events: pl.DataFrame):
     """Yield (id, pandas frame) per id (for libraries needing per-user calls)."""
     for (k,), g in events.group_by("id", maintain_order=True):
         yield k, g.to_pandas()
+
+
+@numba.njit(cache=True)
+def contiguous_runs(starts, t, labels, max_gap_s, max_noise_run):
+    """Split cluster labels into time-contiguous runs (unique ids, -1 = none).
+
+    A run of cluster c continues across other events only while they are noise
+    (label -1), at most ``max_noise_run`` of them in a row, and the time since the
+    previous c event is <= max_gap_s. Any event of a different cluster ends it.
+    """
+    n = len(t)
+    out = np.full(n, -1, np.int64)
+    nxt = -1
+    for k in range(len(starts) - 1):
+        cur, last_t, noise = -1, 0.0, 0
+        for i in range(starts[k], starts[k + 1]):
+            c = labels[i]
+            if c < 0:
+                noise += 1
+                if noise > max_noise_run:
+                    cur = -1
+                continue
+            if c != cur or t[i] - last_t > max_gap_s:
+                nxt += 1
+                cur = c
+            out[i] = nxt
+            last_t, noise = t[i], 0
+    return out
+
+
+
+def trim_runs(x: np.ndarray, y: np.ndarray, runs: np.ndarray, radius_m: float,
+              min_keep: float = 0.5) -> np.ndarray:
+    """Robust spatial trim of labeled runs.
+
+    Events farther than radius_m from their run's median center are unlabeled
+    (removes approach/departure points that density methods attach to stays); a run
+    losing more than (1 - min_keep) of its events is dropped entirely (e.g. an evenly
+    sampled trajectory that a relative-density method called a cluster).
+    """
+    out = runs.copy()
+    idx = np.flatnonzero(runs >= 0)
+    if len(idx) == 0:
+        return out
+    order = idx[np.argsort(runs[idx], kind="stable")]
+    r = runs[order]
+    bounds = np.r_[0, np.flatnonzero(np.diff(r)) + 1, len(r)]
+    for a, b in zip(bounds[:-1], bounds[1:]):
+        g = order[a:b]
+        d = np.hypot(x[g] - np.median(x[g]), y[g] - np.median(y[g]))
+        far = d > radius_m
+        out[g[far]] = -1
+        if (~far).mean() < min_keep:
+            out[g] = -1
+    return out

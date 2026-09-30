@@ -102,3 +102,13 @@ def trackintel_stays(df: pl.DataFrame, min_duration_s, radius_m, max_gap_s, incl
 - Li, Q., Zheng, Y., Xie, X., Chen, Y., Liu, W., Ma, W.-Y. (2008). Mining user similarity based on location history. *ACM SIGSPATIAL GIS '08*, 34. https://doi.org/10.1145/1463434.1463477
 - Efstathiades, H. et al. (2015). Identification of key locations based on online social network activity. *ASONAM '15*. https://doi.org/10.1145/2808797.2808877
 - Docs: https://trackintel.readthedocs.io/ · Repo: https://github.com/mie-lab/trackintel
+
+## Wrapper in this repo
+
+`src/dwells/algorithms/trackintel_sliding.py` (`NAME = "trackintel_sliding"`).
+
+- Parameter mapping: `dist_threshold = radius_m`, `time_threshold = min_duration_s / 60`, `gap_threshold = max_gap_s / 60`, `include_last=True`, other arguments at their defaults.
+- Gaps: each id is split on gaps > `max_gap_s` (`common.gap_segments`), and every segment goes to trackintel as its own `user_id`. A gap therefore closes the stay instead of discarding it, and `include_last` emits the stay that is open at each segment's end. Results are mapped back to the real id.
+- Native semantics kept: the radius is measured from the first point with `>=` tests, and the end is the first fix outside the stay (the last fix for a trailing stay). The centroid is trackintel's circular mean of *distinct* member positions, and `n_events` comes from the library's pfs→staypoint membership.
+- Cross-check: start, end and `n_events` match `fastmob_stays` exactly (1420 and 7047 dwells on dev_urban_gps at two parameter sets). Only the centroid differs.
+- Throughput: 54k GPS events in 1.0 s (~55k ev/s), 890k GPS events (eval_urban_gps) in 15 s (~60k ev/s). On sparse CDR data it drops to ~3.6k ev/s (86k events in 24 s) because of per-user overhead across many short segments.
