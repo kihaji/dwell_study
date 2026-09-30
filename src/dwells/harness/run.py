@@ -177,12 +177,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("stage", choices=["sweep", "eval"])
     ap.add_argument("--algos", default="all")
-    ap.add_argument("--datasets", default=None)
+    ap.add_argument("--datasets", default=None, help="comma-separated globs")
     ap.add_argument("--workers", type=int, default=12)
     a = ap.parse_args()
     algos = algorithms.names() if a.algos == "all" else a.algos.split(",")
     pat = a.datasets or ("dev_*" if a.stage == "sweep" else "eval_*")
-    datasets = [d for d in dataset_dirs() if fnmatch.fnmatch(d, pat)]
+    datasets = [d for d in dataset_dirs() if any(fnmatch.fnmatch(d, x) for x in pat.split(","))]
     if a.stage == "sweep":
         execute(sweep_tasks(algos, datasets), RESULTS / "sweep.parquet", a.workers)
     else:
