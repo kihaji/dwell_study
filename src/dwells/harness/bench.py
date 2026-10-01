@@ -31,6 +31,10 @@ LADDERS = {
     "adtech": ["scale_adtech_20", "scale_adtech_200", "scale_adtech_2000", "scale_adtech_18000"],
     "single": ["scale_gps_single_1m"],
 }
+# Runs not attempted because they would exhaust the 32 GB workstation (one crashed the
+# whole session): Infostop clusters all users' stationary events globally and already
+# peaked at 8.6 GB on 2M adtech events and 18 GB on 9.4M GPS events.
+SKIP = {("infostop", "scale_adtech_18000"): "skipped: memory (8.6 GB at 2M events, global Infomap)"}
 PARAMS = {
     "gps": {"min_duration_s": 900, "radius_m": 100, "max_gap_s": 7200},
     "single": {"min_duration_s": 900, "radius_m": 100, "max_gap_s": 7200},
@@ -77,7 +81,7 @@ def _run_guarded(cmd, timeout_s: float, mem_limit_gb: float):
                 proc.kill()
                 proc.wait()
                 return 1, "", err
-            time.sleep(0.5)
+            time.sleep(0.2)
         fo.seek(0)
         fe.seek(0)
         out, stderr = fo.read(), fe.read()
@@ -89,7 +93,7 @@ def main():
     ap.add_argument("--algos", default="all")
     ap.add_argument("--ladders", default="gps,adtech,single")
     ap.add_argument("--timeout", type=int, default=900)
-    ap.add_argument("--mem-limit-gb", type=float, default=16.0, help="kill a run whose RSS exceeds this")
+    ap.add_argument("--mem-limit-gb", type=float, default=8.0, help="kill a run whose RSS exceeds this")
     ap.add_argument("--one", nargs=4, help=argparse.SUPPRESS)  # algo dataset shape params_json (child mode)
     a = ap.parse_args()
     if a.one:
@@ -111,7 +115,10 @@ def main():
                        json.dumps(PARAMS[ladder])]
                 row = {"algo": algo, "ladder": ladder, "dataset": ds, "shape": shape, "error": None}
                 t = time.perf_counter()
-                rc, out, err = _run_guarded(cmd, a.timeout, a.mem_limit_gb)
+                if (algo, ds) in SKIP:
+                    rc, out, err = 1, "", SKIP[(algo, ds)]
+                else:
+                    rc, out, err = _run_guarded(cmd, a.timeout, a.mem_limit_gb)
                 if rc == 0:
                     row |= json.loads(out.strip().splitlines()[-1])
                 else:

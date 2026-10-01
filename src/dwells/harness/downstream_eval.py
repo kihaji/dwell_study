@@ -152,9 +152,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--datasets", default="eval_*")
     ap.add_argument("--md", type=int, default=900)
+    ap.add_argument("--fresh", action="store_true", help="ignore existing results instead of resuming")
     a = ap.parse_args()
-    out: list = []
+    prev = RESULTS / "downstream.parquet"
+    out: list = pl.read_parquet(prev).to_dicts() if prev.exists() and not a.fresh else []
+    done = {r["dataset"] for r in out}
     for ds in dataset_dirs():
+        if ds in done:
+            continue  # resume: datasets are written whole after they finish
         if any(fnmatch.fnmatch(ds, x) for x in a.datasets.split(",")) and (dataset_dirs()[ds] / "truth_agents.parquet").exists():
             evaluate_dataset(ds, a.md, out)
             pl.DataFrame(out).write_parquet(RESULTS / "downstream.parquet")
