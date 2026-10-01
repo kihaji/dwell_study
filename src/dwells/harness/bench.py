@@ -10,12 +10,19 @@ Runs execute sequentially (clean timings). A run is killed after --timeout secon
 when its RSS exceeds --mem-limit-gb (recorded as timeout>/oom> errors), and an
 algorithm stops climbing a ladder after any failure. Results -> results/bench.parquet. Detection only; loading
 time and the RSS after loading are reported separately.
+
+Run it under a kernel-enforced memory cap so a runaway algorithm cannot exhaust the
+machine (on WSL2 that takes down the whole VM):
+
+    systemd-run --user --scope -p MemoryMax=12G -p MemorySwapMax=0 \
+        uv run python -m dwells.harness.bench
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import resource
 import subprocess
 import sys
@@ -85,6 +92,8 @@ def _run_guarded(cmd, timeout_s: float, mem_limit_gb: float):
         fo.seek(0)
         fe.seek(0)
         out, stderr = fo.read(), fe.read()
+        if proc.returncode in (-9, 137):  # SIGKILL: the kernel cgroup memory cap (see module doc)
+            return proc.returncode, out, "oom: killed by memory cap"
         return proc.returncode, out, (stderr.strip().splitlines() or ["?"])[-1][:300]
 
 
@@ -116,16 +125,19 @@ def main():
                 row = {"algo": algo, "ladder": ladder, "dataset": ds, "shape": shape, "error": None}
                 t = time.perf_counter()
                 if (algo, ds) in SKIP:
-                    rc, out, err = 1, "", SKIP[(algo, ds)]
+                    rc, stdout, err = 1, "", SKIP[(algo, ds)]
                 else:
-                    rc, out, err = _run_guarded(cmd, a.timeout, a.mem_limit_gb)
+                    rc, stdout, err = _run_guarded(cmd, a.timeout, a.mem_limit_gb)
                 if rc == 0:
-                    row |= json.loads(out.strip().splitlines()[-1])
+                    row |= json.loads(stdout.strip().splitlines()[-1])
                 else:
                     row["error"] = err
                 row["wall_s"] = time.perf_counter() - t
                 rows.append(row)
-                pl.DataFrame(rows, infer_schema_length=None).write_parquet(out)
+                # write-then-rename: overwriting the parquet file read at startup failed in place
+                tmp = out.with_suffix(".tmp.parquet")
+                pl.DataFrame(rows, infer_schema_length=None).write_parquet(tmp)
+                os.replace(tmp, out)
                 print(f"{algo:20s} {ds:22s} {row.get('runtime_s', float('nan')):9.2f}s "
                       f"rss={row.get('peak_rss_mb', float('nan')):8.0f}MB {row['error'] or ''}", flush=True)
                 if row["error"]:
