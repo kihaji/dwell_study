@@ -6,8 +6,9 @@ Ladders (suburban synthetic data, see generator/build.py):
   gps     scale_gps_{1,8,80,800}         ~10k -> 9.4M events, dense per id (many events/id)
   adtech  scale_adtech_{20,...,18000}    ~20k -> 16.5M events, sparse (many ids)
   single  scale_gps_single_1m            one id with ~1M events (per-id scaling)
-Runs execute sequentially (clean timings). An algorithm stops climbing a ladder after
-a timeout or failure. Results -> results/bench.parquet. Detection only; loading
+Runs execute sequentially (clean timings). A run is killed after --timeout seconds or
+when its RSS exceeds --mem-limit-gb (recorded as timeout>/oom> errors), and an
+algorithm stops climbing a ladder after any failure. Results -> results/bench.parquet. Detection only; loading
 time and the RSS after loading are reported separately.
 """
 
@@ -54,11 +55,41 @@ def one(algo: str, dataset: str, shape: str, params: dict) -> dict:
             "peak_rss_mb": _rss_mb(), "n_events": ev.height, "n_ids": ev["id"].n_unique(), "n_dwells": d.height}
 
 
+def _run_guarded(cmd, timeout_s: float, mem_limit_gb: float):
+    """Run a child process, killing it on timeout or when its RSS exceeds the limit."""
+    import tempfile
+
+    import psutil
+
+    with tempfile.TemporaryFile("w+") as fo, tempfile.TemporaryFile("w+") as fe:
+        proc = subprocess.Popen(cmd, stdout=fo, stderr=fe, text=True)
+        ps, t0, err = psutil.Process(proc.pid), time.perf_counter(), None
+        while proc.poll() is None:
+            try:
+                rss = ps.memory_info().rss + sum(c.memory_info().rss for c in ps.children(recursive=True))
+            except psutil.NoSuchProcess:
+                rss = 0
+            if rss > mem_limit_gb * 2**30:
+                err = f"oom>{mem_limit_gb:g}GB"
+            elif time.perf_counter() - t0 > timeout_s:
+                err = f"timeout>{timeout_s:g}s"
+            if err:
+                proc.kill()
+                proc.wait()
+                return 1, "", err
+            time.sleep(0.5)
+        fo.seek(0)
+        fe.seek(0)
+        out, stderr = fo.read(), fe.read()
+        return proc.returncode, out, (stderr.strip().splitlines() or ["?"])[-1][:300]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--algos", default="all")
     ap.add_argument("--ladders", default="gps,adtech,single")
     ap.add_argument("--timeout", type=int, default=900)
+    ap.add_argument("--mem-limit-gb", type=float, default=16.0, help="kill a run whose RSS exceeds this")
     ap.add_argument("--one", nargs=4, help=argparse.SUPPRESS)  # algo dataset shape params_json (child mode)
     a = ap.parse_args()
     if a.one:
@@ -80,14 +111,11 @@ def main():
                        json.dumps(PARAMS[ladder])]
                 row = {"algo": algo, "ladder": ladder, "dataset": ds, "shape": shape, "error": None}
                 t = time.perf_counter()
-                try:
-                    p = subprocess.run(cmd, capture_output=True, text=True, timeout=a.timeout)
-                    if p.returncode == 0:
-                        row |= json.loads(p.stdout.strip().splitlines()[-1])
-                    else:
-                        row["error"] = (p.stderr.strip().splitlines() or ["?"])[-1][:300]
-                except subprocess.TimeoutExpired:
-                    row["error"] = f"timeout>{a.timeout}s"
+                rc, out, err = _run_guarded(cmd, a.timeout, a.mem_limit_gb)
+                if rc == 0:
+                    row |= json.loads(out.strip().splitlines()[-1])
+                else:
+                    row["error"] = err
                 row["wall_s"] = time.perf_counter() - t
                 rows.append(row)
                 pl.DataFrame(rows, infer_schema_length=None).write_parquet(out)
