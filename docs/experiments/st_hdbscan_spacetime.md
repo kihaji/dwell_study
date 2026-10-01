@@ -1,3 +1,6 @@
+# Experiment: space-time ST-HDBSCAN (branch exp/st-hdbscan-spacetime)
+
+```
 Experiment: classic space-time ST-HDBSCAN (features x, y, t * radius_m / (max_gap_s / 2))
 vs the spatial-only HDBSCAN + temporal run splitting used on main.
 
@@ -16,3 +19,4 @@ Dev-set F1 (md=900, shape 1):
 Outcome: space-time is better on dense GPS, worse on CDR (sector-quantized positions
 repeat exactly, so time is the only thing separating revisits). Adopted as the default
 on main (merged); the spatial mode stays available via time_scale_s=0.
+```
