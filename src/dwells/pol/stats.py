@@ -181,28 +181,33 @@ def anomalies(visits: pl.DataFrame, places: pl.DataFrame, active_days: pl.DataFr
     """Visits that break the routine of their place / identifier."""
     out = []
     pinfo = {(r["id"], r["place_id"]): r for r in places.select(
-        "id", "place_id", "n_visits", "hour_presence_s", "weekday_visits").iter_rows(named=True)}
+        "id", "place_id", "n_visits", "weekday_visits").iter_rows(named=True)}
     days = dict(active_days.iter_rows())
     logdur = visits.with_columns(ld=pl.col("duration_s").clip(60).log()).group_by("id", "place_id").agg(
         pl.col("ld").median().alias("ld_med"), (pl.col("ld") - pl.col("ld").median()).abs().median().alias("ld_mad"))
     stats = {(r["id"], r["place_id"]): r for r in logdur.iter_rows(named=True)}
+    starts: dict[tuple, list] = {}
+    for r in visits.select("id", "place_id", "visit_id", "start_hour").iter_rows(named=True):
+        starts.setdefault((r["id"], r["place_id"]), []).append((r["visit_id"], r["start_hour"]))
     for v in visits.iter_rows(named=True):
         key = (v["id"], v["place_id"])
         p, st = pinfo[key], stats[key]
         if p["n_visits"] == 1 and days.get(v["id"], 0) >= 7:
             out.append((v["id"], v["visit_id"], v["place_id"], "rare_place",
                         "only visit to this place in an established routine", 0.5))
-        if p["n_visits"] >= 4:
-            h = np.asarray(p["hour_presence_s"], float)
-            share = h[v["start_hour"]] / h.sum() if h.sum() > 0 else 1.0
-            if share < 0.05:
+        if p["n_visits"] >= 5:
+            # arrival hour compared with the other visits' arrival hours (circular, +-1 h)
+            others = [h for vid, h in starts[key] if vid != v["visit_id"]]
+            near = sum(min(abs(h - v["start_hour"]), 24 - abs(h - v["start_hour"])) <= 1 for h in others)
+            frac = near / len(others)
+            if frac < 0.10:
                 out.append((v["id"], v["visit_id"], v["place_id"], "unusual_hour",
-                            f"arrived at {v['start_hour']:02d}:00 UTC; {share:.0%} of usual time here falls in that hour",
-                            float(1 - share / 0.05)))
+                            f"arrived {v['start_hour']:02d}:00 UTC; {frac:.0%} of other visits arrived within 1 h of that",
+                            float(1 - frac / 0.10)))
             mad = (st["ld_mad"] or 0) * 1.4826
-            if mad > 0:
+            if mad > 0 and p["n_visits"] >= 6:
                 z = abs(np.log(max(v["duration_s"], 60)) - st["ld_med"]) / mad
-                if z > 3:
+                if z > 3.5:
                     kind = "unusually_long" if np.log(max(v["duration_s"], 60)) > st["ld_med"] else "unusually_short"
                     out.append((v["id"], v["visit_id"], v["place_id"], kind,
                                 f"{v['duration_s'] / 3600:.1f} h vs typical {np.exp(st['ld_med']) / 3600:.1f} h",
