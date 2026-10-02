@@ -158,7 +158,9 @@ def detect(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float
            boundary: str = "midpoint", duration_basis: str = "estimated",
            coarse_sigma_m: float | None = None, confirm_s: float | None = None,
            coarse_rel: float | None = None, **_) -> pl.DataFrame:
-    """See module docstring. ``boundary``: "observed" (first/last member event) or
+    """Dwells only; see detect_with_members for the event-to-dwell membership.
+
+    See module docstring. ``boundary``: "observed" (first/last member event) or
     "midpoint" (half-way to the previous/next event of the id, capped at max_gap_s / 2).
     ``duration_basis``: which span ("observed" or "estimated") must reach min_duration_s.
     ``coarse_sigma_m``: absolute 1-sigma (m) above which a fix is coarse; overrides
@@ -169,6 +171,21 @@ def detect(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float
     Extra output columns: first_event_ts, last_event_ts, arrive_after/arrive_by,
     depart_after/depart_by: the unobserved arrival/departure windows, bounded by the
     nearest informative (non-coarse) fixes outside the dwell; null at track ends."""
+    return detect_with_members(events, min_duration_s=min_duration_s, radius_m=radius_m, max_gap_s=max_gap_s,
+                               gate_p=gate_p, coarse_factor=coarse_factor, k_break=k_break,
+                               min_events=min_events, default_sigma_m=default_sigma_m, boundary=boundary,
+                               duration_basis=duration_basis, coarse_sigma_m=coarse_sigma_m,
+                               confirm_s=confirm_s, coarse_rel=coarse_rel)[0].drop("dwell_label")
+
+
+def detect_with_members(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float = 100,
+                        max_gap_s: float = 3600, gate_p: float = 0.99, coarse_factor: float = 3.0,
+                        k_break: int = 2, min_events: int = 2, default_sigma_m: float = 10.0,
+                        boundary: str = "midpoint", duration_basis: str = "estimated",
+                        coarse_sigma_m: float | None = None, confirm_s: float | None = None,
+                        coarse_rel: float | None = None, **_):
+    """Returns (dwells with a ``dwell_label`` column, per-event dwell_label array (-1 =
+    not in a kept dwell), per-event coarse mask, per-event 1-sigma)."""
     a = prepare(events, default_sigma_m)
     v = radius_m**2 / 4
     sigma = np.sqrt((a.cee + a.cnn) / 2)
@@ -185,9 +202,10 @@ def detect(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float
     d = dwells_from_labels(events, labels, md_kernel, centroid="fused",
                            default_sigma_m=default_sigma_m, extra_var=v, keep_label=True)
     if d.height == 0:
-        return d.drop("label", strict=False)
+        d = d.drop("label", strict=False).with_columns(dwell_label=pl.lit(None, dtype=pl.Int64))
+        return d, np.full(events.height, -1), coarse, sigma
     informative = ~coarse
-    d = d.join(_windows(events, labels, informative), on="label").drop("label")
+    d = d.join(_windows(events, labels, informative), on="label").rename({"label": "dwell_label"})
     if boundary == "midpoint":
         cap = pl.duration(seconds=max_gap_s / 2)
         d = d.with_columns(
@@ -200,7 +218,9 @@ def detect(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float
         )
     d = d.with_columns(duration_s=(pl.col("end_ts") - pl.col("start_ts")).dt.total_seconds())
     span = (pl.col("last_event_ts") - pl.col("first_event_ts")).dt.total_seconds()
-    return d.filter((span if duration_basis == "observed" else pl.col("duration_s")) >= min_duration_s)
+    d = d.filter((span if duration_basis == "observed" else pl.col("duration_s")) >= min_duration_s)
+    kept = np.isin(labels, d["dwell_label"].to_numpy())
+    return d, np.where(kept, labels, -1), coarse, sigma
 
 
 def _windows(events: pl.DataFrame, labels: np.ndarray, informative: np.ndarray) -> pl.DataFrame:
