@@ -40,11 +40,10 @@ REFERENCE = "New (this repo). Gating as in Kalman/Mahalanobis data association (
 
 
 @numba.njit(cache=True)
-def _kernel(starts, t, x, y, cee, cnn, cen, v, gate, coarse_sigma, k_break, max_gap, min_events, min_duration,
+def _kernel(starts, t, x, y, cee, cnn, cen, v, gate, coarse, k_break, max_gap, min_events, min_duration,
             confirm):
     n = len(t)
     labels = np.full(n, -1, np.int64)
-    coarse = np.sqrt((cee + cnn) / 2) > coarse_sigma
     buf = np.empty(n, np.int64)  # pending coarse candidates of the open stay
     nxt = 0
     for k in range(len(starts) - 1):
@@ -157,7 +156,8 @@ def detect(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float
            max_gap_s: float = 3600, gate_p: float = 0.99, coarse_factor: float = 3.0,
            k_break: int = 2, min_events: int = 2, default_sigma_m: float = 10.0,
            boundary: str = "midpoint", duration_basis: str = "estimated",
-           coarse_sigma_m: float | None = None, confirm_s: float | None = None, **_) -> pl.DataFrame:
+           coarse_sigma_m: float | None = None, confirm_s: float | None = None,
+           coarse_rel: float | None = None, **_) -> pl.DataFrame:
     """See module docstring. ``boundary``: "observed" (first/last member event) or
     "midpoint" (half-way to the previous/next event of the id, capped at max_gap_s / 2).
     ``duration_basis``: which span ("observed" or "estimated") must reach min_duration_s.
@@ -171,16 +171,22 @@ def detect(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float
     nearest informative (non-coarse) fixes outside the dwell; null at track ends."""
     a = prepare(events, default_sigma_m)
     v = radius_m**2 / 4
-    coarse_sigma = coarse_sigma_m if coarse_sigma_m is not None else coarse_factor * radius_m
+    sigma = np.sqrt((a.cee + a.cnn) / 2)
+    coarse = sigma > (coarse_sigma_m if coarse_sigma_m is not None else coarse_factor * radius_m)
+    if coarse_rel is not None:
+        # only fixes much vaguer than this id's typical fix are coarse (robust to a
+        # uniformly coarse source or a mis-scaled accuracy field)
+        med = np.repeat([np.median(sigma[s:e]) for s, e in zip(a.starts[:-1], a.starts[1:])], np.diff(a.starts))
+        coarse &= sigma > coarse_rel * med
     md_kernel = min_duration_s if duration_basis == "observed" else 0.0
     labels = _kernel(a.starts, a.t, a.x, a.y, a.cee, a.cnn, a.cen, v, chi2.ppf(gate_p, 2),
-                     coarse_sigma, k_break, max_gap_s, min_events, md_kernel, confirm_s or 0.0)
+                     coarse, k_break, max_gap_s, min_events, md_kernel, confirm_s or 0.0)
     # a dwell's start/end come from informative events only (coarse ones lie inside the span)
     d = dwells_from_labels(events, labels, md_kernel, centroid="fused",
                            default_sigma_m=default_sigma_m, extra_var=v, keep_label=True)
     if d.height == 0:
         return d.drop("label", strict=False)
-    informative = np.sqrt((a.cee + a.cnn) / 2) <= coarse_sigma
+    informative = ~coarse
     d = d.join(_windows(events, labels, informative), on="label").drop("label")
     if boundary == "midpoint":
         cap = pl.duration(seconds=max_gap_s / 2)
