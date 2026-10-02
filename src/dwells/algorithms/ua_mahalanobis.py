@@ -12,10 +12,11 @@ Per id, in time order:
 * Coarse events (1-sigma > coarse_factor * radius_m) cannot discriminate places:
   they never start, break or extend a stay. A consistent coarse event is attached
   only if a later informative event confirms the stay continued past it.
-* Robust breaking: the stay closes only after ``k_break`` consecutive informative
-  events fail the gate (single multipath outliers are skipped), or when no
-  informative event arrives within ``max_gap_s``. The next stay is re-seeded at the
-  first failing event.
+* Robust breaking: the stay closes after ``k_break`` consecutive informative events
+  fail the gate (single multipath outliers are skipped), when the misses persisted
+  for ``confirm_s`` seconds before the id was seen back in place (a real short trip),
+  or when no informative event arrives within ``max_gap_s``. The next stay is
+  re-seeded at the first failing event.
 * A closed stay is a dwell if it has >= ``min_events`` informative events and
   (last - first informative time) >= ``min_duration_s``.
 The dwell centroid is the fused estimate, reported with its 1-sigma ellipse.
@@ -39,7 +40,8 @@ REFERENCE = "New (this repo). Gating as in Kalman/Mahalanobis data association (
 
 
 @numba.njit(cache=True)
-def _kernel(starts, t, x, y, cee, cnn, cen, v, gate, coarse_sigma, k_break, max_gap, min_events, min_duration):
+def _kernel(starts, t, x, y, cee, cnn, cen, v, gate, coarse_sigma, k_break, max_gap, min_events, min_duration,
+            confirm):
     n = len(t)
     labels = np.full(n, -1, np.int64)
     coarse = np.sqrt((cee + cnn) / 2) > coarse_sigma
@@ -103,6 +105,18 @@ def _kernel(starts, t, x, y, cee, cnn, cen, v, gate, coarse_sigma, k_break, max_
                     n_buf += 1
                 i += 1
                 continue
+            if d2 <= gate and n_fail > 0 and confirm > 0 and t[i] - t[first_fail] >= confirm:
+                # the id was away for >= confirm seconds: the misses were a real departure
+                if n_inf >= min_events and t_last - t_first >= min_duration:
+                    nxt += 1
+                else:
+                    for j in range(c0, i):
+                        if labels[j] == nxt:
+                            labels[j] = -1
+                is_open = False
+                n_fail = 0
+                i = first_fail
+                continue
             if d2 <= gate:
                 de = cee[i] + v
                 dn = cnn[i] + v
@@ -141,11 +155,73 @@ def _kernel(starts, t, x, y, cee, cnn, cen, v, gate, coarse_sigma, k_break, max_
 
 def detect(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float = 100,
            max_gap_s: float = 3600, gate_p: float = 0.99, coarse_factor: float = 3.0,
-           k_break: int = 2, min_events: int = 2, default_sigma_m: float = 10.0, **_) -> pl.DataFrame:
+           k_break: int = 2, min_events: int = 2, default_sigma_m: float = 10.0,
+           boundary: str = "midpoint", duration_basis: str = "estimated",
+           coarse_sigma_m: float | None = None, confirm_s: float | None = None, **_) -> pl.DataFrame:
+    """See module docstring. ``boundary``: "observed" (first/last member event) or
+    "midpoint" (half-way to the previous/next event of the id, capped at max_gap_s / 2).
+    ``duration_basis``: which span ("observed" or "estimated") must reach min_duration_s.
+    ``coarse_sigma_m``: absolute 1-sigma (m) above which a fix is coarse; overrides
+    coarse_factor * radius_m (place size and fix vagueness are separate questions).
+    ``confirm_s``: fewer than k_break misses still end the stay when the id stayed away
+    that long (the next in-place fix came >= confirm_s after the first miss); separates
+    brief GPS outliers from real short trips seen as a single fix in sparse data.
+    Extra output columns: first_event_ts, last_event_ts, arrive_after/arrive_by,
+    depart_after/depart_by: the unobserved arrival/departure windows, bounded by the
+    nearest informative (non-coarse) fixes outside the dwell; null at track ends."""
     a = prepare(events, default_sigma_m)
     v = radius_m**2 / 4
+    coarse_sigma = coarse_sigma_m if coarse_sigma_m is not None else coarse_factor * radius_m
+    md_kernel = min_duration_s if duration_basis == "observed" else 0.0
     labels = _kernel(a.starts, a.t, a.x, a.y, a.cee, a.cnn, a.cen, v, chi2.ppf(gate_p, 2),
-                     coarse_factor * radius_m, k_break, max_gap_s, min_events, min_duration_s)
+                     coarse_sigma, k_break, max_gap_s, min_events, md_kernel, confirm_s or 0.0)
     # a dwell's start/end come from informative events only (coarse ones lie inside the span)
-    return dwells_from_labels(events, labels, min_duration_s, centroid="fused",
-                              default_sigma_m=default_sigma_m, extra_var=v)
+    d = dwells_from_labels(events, labels, md_kernel, centroid="fused",
+                           default_sigma_m=default_sigma_m, extra_var=v, keep_label=True)
+    if d.height == 0:
+        return d.drop("label", strict=False)
+    informative = np.sqrt((a.cee + a.cnn) / 2) <= coarse_sigma
+    d = d.join(_windows(events, labels, informative), on="label").drop("label")
+    if boundary == "midpoint":
+        cap = pl.duration(seconds=max_gap_s / 2)
+        d = d.with_columns(
+            start_ts=pl.when(pl.col("arrive_after").is_null()).then(pl.col("first_event_ts")).otherwise(
+                pl.max_horizontal(pl.col("first_event_ts") - (pl.col("first_event_ts") - pl.col("arrive_after")) / 2,
+                                  pl.col("first_event_ts") - cap)),
+            end_ts=pl.when(pl.col("depart_by").is_null()).then(pl.col("last_event_ts")).otherwise(
+                pl.min_horizontal(pl.col("last_event_ts") + (pl.col("depart_by") - pl.col("last_event_ts")) / 2,
+                                  pl.col("last_event_ts") + cap)),
+        )
+    d = d.with_columns(duration_s=(pl.col("end_ts") - pl.col("start_ts")).dt.total_seconds())
+    span = (pl.col("last_event_ts") - pl.col("first_event_ts")).dt.total_seconds()
+    return d.filter((span if duration_basis == "observed" else pl.col("duration_s")) >= min_duration_s)
+
+
+def _windows(events: pl.DataFrame, labels: np.ndarray, informative: np.ndarray) -> pl.DataFrame:
+    """Per label: first/last member event time and the neighboring informative event times.
+
+    Coarse fixes are skipped when looking for the previous/next event: a fix too vague to
+    tell places apart is no evidence that the id had arrived or left."""
+    idx = np.flatnonzero(labels >= 0)
+    lab = labels[idx]
+    order = np.lexsort((idx, lab))
+    idx, lab = idx[order], lab[order]
+    starts = np.r_[0, np.flatnonzero(np.diff(lab)) + 1]
+    ends = np.r_[starts[1:], len(lab)] - 1
+    first, last = idx[starts], idx[ends]
+    ts, ids = events["timestamp"], events["id"].to_numpy()
+    inf_idx = np.flatnonzero(informative)
+    p = np.searchsorted(inf_idx, first, "left") - 1
+    q = np.searchsorted(inf_idx, last, "right")
+    prev = inf_idx[np.clip(p, 0, max(len(inf_idx) - 1, 0))] if len(inf_idx) else first
+    nxt = inf_idx[np.clip(q, 0, max(len(inf_idx) - 1, 0))] if len(inf_idx) else last
+    has_prev = (p >= 0) & (ids[prev] == ids[first])
+    has_next = (q < len(inf_idx)) & (ids[nxt] == ids[last])
+    return pl.DataFrame({
+        "label": lab[starts], "first_event_ts": ts.gather(first), "last_event_ts": ts.gather(last),
+        "arrive_after": ts.gather(prev), "arrive_by": ts.gather(first),
+        "depart_after": ts.gather(last), "depart_by": ts.gather(nxt),
+    }).with_columns(
+        arrive_after=pl.when(pl.Series(has_prev)).then(pl.col("arrive_after")),
+        depart_by=pl.when(pl.Series(has_next)).then(pl.col("depart_by")),
+    )

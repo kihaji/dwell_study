@@ -60,3 +60,22 @@ def load_meta(dataset_dir: str | Path) -> dict:
 
 
 _ = k_factor  # shape math above mirrors uncertainty.k_factor
+
+
+def dataset_dirs() -> dict[str, Path]:
+    """All repo datasets (synthetic + public) that have an events.parquet."""
+    from dwells.generator.area import DATA_DIR
+
+    out = {}
+    for root in (DATA_DIR / "synthetic", DATA_DIR / "public"):
+        if root.exists():
+            out |= {p.name: p for p in sorted(root.iterdir()) if (p / "events.parquet").exists()}
+    return out
+
+
+def profile_of(name: str) -> str:
+    """Source profile (gps / cdr / adtech) implied by a dataset name."""
+    for p in ("gps", "cdr", "adtech"):
+        if f"_{p}" in name:
+            return p
+    return "adtech" if "foursquare" in name else "gps"
