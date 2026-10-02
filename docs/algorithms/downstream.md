@@ -1,7 +1,9 @@
 # Downstream analytics (places, patterns, transitions, next location, colocation)
 
 Code: `src/dwells/downstream/` (`places.py`, `patterns.py`, `transitions.py`, `nextloc.py`, `colocation.py`).
-Evaluation driver: `src/dwells/harness/downstream_eval.py`. The scoring details are in [../metrics.md](../metrics.md).
+> Focus branch: these building blocks feed `src/dwells/pol/` (the pattern-of-life outputs, see [../outputs.md](../outputs.md)). Places are grouped with the **Mahalanobis merge at 150 m** (chosen in [../tuning.md](../tuning.md)). Colocation is isolated in `dwells.pol.coloc` / `colocations.parquet` for a later deep dive. The main-branch evaluation driver `downstream_eval.py` is not on this branch.
+
+Evaluation driver (main branch): `src/dwells/harness/downstream_eval.py`. The scoring details are in [../metrics.md](../metrics.md).
 
 ## Summary
 

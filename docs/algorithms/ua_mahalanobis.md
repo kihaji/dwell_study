@@ -4,6 +4,24 @@ Module: `src/dwells/algorithms/ua_mahalanobis.py`. Family `uncertainty`,
 `USES_UNCERTAINTY = True`. New in this repo. The gating follows classic Kalman/data-
 association practice (Bar-Shalom & Fortmann 1988).
 
+> **Focus-branch update (focus/ua-mahalanobis).** The tuned implementation adds four
+> mechanisms on top of the base model described below. They are measured and justified in
+> [../tuning.md](../tuning.md):
+> 1. **Midpoint boundaries** (`boundary="midpoint"`): start and end are estimated halfway
+>    to the nearest precise report outside the dwell, capped at `max_gap_s / 2`. The
+>    arrival/departure windows are output (`arrive_after/arrive_by`,
+>    `depart_after/depart_by`).
+> 2. **Estimated-duration filter** (`duration_basis="estimated"`): `min_duration_s` is
+>    checked on the estimated span.
+> 3. **Absolute plus relative coarse rule** (`coarse_sigma_m`, `coarse_rel`): a fix is
+>    coarse if its 1σ exceeds 1000 m and 3× the id's median 1σ. This replaces
+>    `coarse_factor x radius_m`.
+> 4. **Time-confirmed departures** (`confirm_s`): fewer than `k_break` misses still end a
+>    stay when the id was away at least `confirm_s` before being seen back in place.
+>
+> `detect_with_members()` also returns the per-event dwell membership. Recommended
+> parameters are in `src/dwells/presets.py`.
+
 ## Summary
 
 This is a running-centroid detector in which "within radius" is replaced by a

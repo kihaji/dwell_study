@@ -1,5 +1,7 @@
 # Evaluation metrics and protocol
 
+> On the focus/ua-mahalanobis branch the multi-algorithm harness (`run.py`, `downstream_eval.py`) was replaced by `src/dwells/harness/tune.py` (dev tuning / held-out eval / robustness for ua_mahalanobis, see [tuning.md](tuning.md)). Sections 3–4 describe the main-branch protocol; the metric definitions in sections 1–2 are unchanged.
+
 This document covers how detected dwells and colocations are scored against synthetic ground truth (`src/dwells/metrics.py`), how the accuracy harness tunes and evaluates detectors (`src/dwells/harness/run.py`), and how the downstream pipeline is scored (`src/dwells/harness/downstream_eval.py`). Line numbers refer to the working tree as of 2026-09-30.
 
 ---
