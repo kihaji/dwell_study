@@ -16,20 +16,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 
-_PLANNED = [
-    # ports of prior work
-    "li_centroid", "h3_cell_dwell", "kalman_dwell",
-    # libraries
-    "trackintel_sliding", "skmob_stops", "fastmob_stays", "movingpandas_stops", "infostop",
-    # density clustering
-    "st_dbscan", "st_hdbscan",
-    # uncertainty-aware (new)
-    "ua_mahalanobis", "ua_segmentation",
-    # probabilistic / temporal
-    "hmm_stay_move", "changepoint_pelt",
-    # grid
-    "h3_occupancy",
-]
+_PLANNED = ["ua_mahalanobis"]  # focus branch: other detectors live on main
 _MODULES = {n: f"dwells.algorithms.{n}" for n in _PLANNED}
 
 

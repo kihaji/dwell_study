@@ -36,7 +36,7 @@ METHODS = ("distance", "mahalanobis", "h3")
 
 
 def _res_for(size_m):
-    from dwells.algorithms.h3_occupancy import resolution_for
+    from dwells.h3util import resolution_for
 
     return resolution_for(size_m)
 

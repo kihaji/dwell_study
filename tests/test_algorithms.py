@@ -59,23 +59,7 @@ def _spans(d):
 
 # Faithful ports / native library semantics that knowingly violate a contract test.
 # Documented in docs/algorithms/<name>.md; kept visible as xfail rather than hidden.
-KNOWN_LIMITATIONS = {
-    ("h3_cell_dwell", "test_detects_easy_dwells"):
-        "resolution sized from the error ellipse (~28 m cells at 5 m error): boundary flicker fragments stays",
-    # scikit-mobility stops() has no include_last: the stay still open at the end of a
-    # track/segment is never emitted
-    ("skmob_stops", "test_detects_easy_dwells"): "no include_last: 3rd (trailing) stay lost",
-    ("skmob_stops", "test_long_gap_splits"): "no include_last: each gap-split segment ends in an open stay",
-    ("skmob_stops", "test_short_stay_below_min_duration_dropped"): "no include_last: final stay is the open one",
-    ("skmob_stops", "test_multiple_ids_kept_separate"): "no include_last: each id loses its final stay",
-    ("skmob_stops", "test_dense_sampling_drive_splits_stays"): "no include_last: final stay lost",
-    ("skmob_stops", "test_slow_walk_splits_stays"): "no include_last: final stay lost",
-    ("h3_cell_dwell", "test_dense_sampling_drive_splits_stays"): "fine ellipse-sized cells fragment the stays",
-    ("h3_cell_dwell", "test_slow_walk_splits_stays"): "fine ellipse-sized cells fragment the stays",
-    # density chaining: consecutive travel fixes closer than radius_m link the two stays
-    ("st_dbscan", "test_dense_sampling_drive_splits_stays"): "5 s fixes 50 m apart chain the stays (one 65-min dwell)",
-    ("st_dbscan", "test_slow_walk_splits_stays"): "walking fixes 83 m apart chain the stays (one 89-min dwell)",
-}
+KNOWN_LIMITATIONS: dict = {}
 
 
 @pytest.fixture(params=algorithms.names())

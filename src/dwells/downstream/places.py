@@ -98,7 +98,7 @@ def _cluster(method, x, y, d_id, radius_m, cov, lat, lon):
                 best, best_bic = g, bic
         return best.predict(X)
     if method == "h3":
-        from dwells.algorithms.h3_occupancy import resolution_for
+        from dwells.h3util import resolution_for
 
         from scipy.sparse import coo_matrix
         from scipy.sparse.csgraph import connected_components

@@ -1,7 +1,0 @@
-# Scorecard weights (must sum to 1). Edit and re-run: uv run python -m dwells.harness.score
-accuracy = 0.35      # held-out detection F1 (synthetic + labeled public) and place-grouping ARI
-scalability = 0.20   # throughput + how far up the scale ladders the algorithm completes
-uncertainty = 0.15   # measured F1 lift from error information (shape 1 -> 3_mixed) on cdr/adtech
-spark = 0.10         # rubric (rubric.toml)
-extensibility = 0.10 # rubric
-ease_of_use = 0.10   # rubric
