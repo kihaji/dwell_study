@@ -13,8 +13,7 @@ from __future__ import annotations
 # after 15 min away; fixes vaguer than 1 km (1-sigma) AND 3x vaguer than the id's typical
 # fix never define a dwell (a uniformly coarse source such as CDR is not discarded).
 BASE = {"radius_m": 75, "max_gap_s": 43200, "gate_p": 0.99, "k_break": 3, "confirm_s": 900,
-        "coarse_sigma_m": 1000.0, "coarse_rel": 3.0, "min_events": 2, "boundary": "midpoint",
-        "duration_basis": "estimated"}
+        "coarse_sigma_m": 1000.0, "coarse_rel": 3.0, "min_events": 2}
 # default_sigma_m only matters for centerpoint-only data (no accuracy fields): it should be
 # the source's typical 1-sigma error (keep it below coarse_sigma_m).
 PRESETS: dict[str, dict] = {

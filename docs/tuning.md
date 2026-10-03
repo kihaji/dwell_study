@@ -99,7 +99,6 @@ for centerpoint-only data:
 | k_break | 3 | consecutive misses that end a stay |
 | confirm_s | 900 | ...or this long away before being seen back |
 | coarse_sigma_m / coarse_rel | 1000 / 3 | fixes worse than 1 km and 3× the id's typical fix are not used to locate stays |
-| boundary / duration_basis | midpoint / estimated | start/end estimated between reports; min dwell checked on that span |
 | default_sigma_m | gps 10, cdr 300, adtech 300, mixed 30 | error assumed when no accuracy fields exist |
 
 The base matched or beat the per-source tuned values on held-out data, except adtech by

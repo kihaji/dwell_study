@@ -1,26 +1,24 @@
 # ua_mahalanobis: sequential information-filter stay with Mahalanobis gating (new)
 
-Module: `src/dwells/algorithms/ua_mahalanobis.py`. Family `uncertainty`,
-`USES_UNCERTAINTY = True`. New in this repo. The gating follows classic Kalman/data-
+Module: `src/dwells/algorithms/ua_mahalanobis.py`. New in this repo. The gating follows classic Kalman/data-
 association practice (Bar-Shalom & Fortmann 1988).
 
-> **Focus-branch update (focus/ua-mahalanobis).** The tuned implementation adds four
-> mechanisms on top of the base model described below. They are measured and justified in
-> [../tuning.md](../tuning.md):
-> 1. **Midpoint boundaries** (`boundary="midpoint"`): start and end are estimated halfway
->    to the nearest precise report outside the dwell, capped at `max_gap_s / 2`. The
->    arrival/departure windows are output (`arrive_after/arrive_by`,
->    `depart_after/depart_by`).
-> 2. **Estimated-duration filter** (`duration_basis="estimated"`): `min_duration_s` is
->    checked on the estimated span.
-> 3. **Absolute plus relative coarse rule** (`coarse_sigma_m`, `coarse_rel`): a fix is
->    coarse if its 1σ exceeds 1000 m and 3× the id's median 1σ. This replaces
->    `coarse_factor x radius_m`.
-> 4. **Time-confirmed departures** (`confirm_s`): fewer than `k_break` misses still end a
->    stay when the id was away at least `confirm_s` before being seen back in place.
+> **Focus branch.** This is the only detector on the branch, fixed to its tuned behavior
+> (the measurements and rationale are in [../tuning.md](../tuning.md)). On top of the
+> base model below:
+> 1. **Estimated boundaries.** Start and end are placed halfway to the nearest informative
+>    fix outside the dwell, capped at `max_gap_s / 2`. The arrival/departure windows are
+>    output (`arrive_after/arrive_by`, `depart_after/depart_by`).
+> 2. **Duration filter on the estimated span.** `min_duration_s` is checked after the
+>    kernel, on the estimated span.
+> 3. **Coarse rule.** A fix is coarse if its 1σ exceeds `coarse_sigma_m` (1000 m) **and**
+>    `coarse_rel` (3) × the id's median 1σ.
+> 4. **Time-confirmed departures.** Fewer than `k_break` misses still end a stay when the
+>    id was away at least `confirm_s` before being seen back in place.
 >
-> `detect_with_members()` also returns the per-event dwell membership. Recommended
-> parameters are in `src/dwells/presets.py`.
+> The earlier switches (`boundary`, `duration_basis`, `coarse_factor`) were removed.
+> `detect_with_members()` returns the dwells plus the per-event membership, coarse mask
+> and 1σ. Function defaults equal the tuned base preset (`src/dwells/presets.py`).
 
 ## Summary
 
@@ -72,8 +70,8 @@ In words, about **1.52 · radius_m** for GPS. At `r = 100` m and σ = 5 m this i
 one event `P = R_seed`, so `S ≈ 2R` and the gate is `√2` larger), which makes the second
 fix easy to accept.
 
-**Coarse events.** `coarse_i ⇔ sqrt((C_ee + C_nn)/2) > coarse_factor · radius_m`
-(`:45`, threshold `coarse_factor · radius_m` passed at `:148`). A coarse fix has
+**Coarse events.** `coarse_i ⇔ σ_i > coarse_sigma_m and σ_i > coarse_rel · median_id(σ)`,
+with `σ_i = sqrt((C_ee + C_nn)/2)` (computed in `detect_with_members`). A coarse fix has
 `S ≈ C_i`, so almost any displacement passes the gate. Such a fix carries no information
 about *which* place, only a little about *whether still here*.
 
@@ -130,14 +128,20 @@ fixes every minute.
 
 ## Parameters
 
-| Harness param | Meaning here |
-|---|---|
-| `radius_m` | Within-place spread `v = radius_m²/4` (so the gate is about 1.52 · radius_m for precise fixes), and the coarse threshold `coarse_factor · radius_m` |
-| `max_gap_s` | Max time between accepted informative events |
-| `min_duration_s` | Min `t_last - t_first` over informative events |
+All parameters are keyword arguments of `detect` / `detect_with_members`; the defaults are the
+tuned base preset.
 
-Algorithm-specific defaults: `gate_p = 0.99`, `coarse_factor = 3.0`, `k_break = 2`,
-`min_events = 2` (informative), `default_sigma_m = 10` (shape 1).
+| parameter | default | meaning |
+|---|---|---|
+| `min_duration_s` | 900 | dwell definition, checked on the estimated span |
+| `radius_m` | 75 | within-place spread `v = radius_m²/4` (gate ≈ 1.52 · radius_m for precise fixes) |
+| `max_gap_s` | 43200 | max time between accepted informative events |
+| `gate_p` | 0.99 | chi-square probability of the membership gate |
+| `k_break` | 3 | consecutive informative misses that end a stay |
+| `confirm_s` | 900 | ...or this long away before being seen back (0 disables) |
+| `coarse_sigma_m`, `coarse_rel` | 1000, 3 | coarse-fix rule (see above) |
+| `min_events` | 2 | informative fixes needed for a dwell |
+| `default_sigma_m` | 10 | 1σ assumed for centerpoint-only data (presets: GPS 10, CDR / adtech 300) |
 
 ## Use of positional uncertainty
 
@@ -148,10 +152,13 @@ k-miss outlier tolerance.
 
 ## Output semantics
 
-- `start_ts` / `end_ts`: first / last **informative** labelled event. Attached coarse
-  events always lie strictly inside, because they are attached only when a later
-  informative event confirms the stay. Unlabelled outliers inside the span do not
-  shorten it.
+- `first_event_ts` / `last_event_ts`: first / last **informative** labelled event.
+  Attached coarse events always lie strictly inside, because they are attached only when
+  a later informative event confirms the stay. Unlabelled outliers inside the span do
+  not shorten it.
+- `start_ts` / `end_ts`: estimated, halfway into the arrival/departure windows
+  (`arrive_after`–`arrive_by`, `depart_after`–`depart_by`), capped at `max_gap_s / 2`.
+  At track ends the observed first/last event is used.
 - Centroid: fused (inverse-covariance-weighted) mean over labelled events, with
   `extra_var = v` added to each event's variance (`common.py:80-99`). This is the same
   estimator as the kernel.
@@ -186,7 +193,7 @@ k-miss outlier tolerance.
   `Σ_true = Σ_reported / c²` with `c ~ lognormal(0, 0.25)`, so reported errors are only
   roughly honest. Overconfident sources cause spurious breaks, which `k_break` mitigates.
 - If every fix is coarse, there are no dwells (see above).
-- No `KNOWN_LIMITATIONS` xfails. It passes all four coarse-point tests.
+- It passes all contract and coarse-point tests (`tests/test_algorithms.py`, `tests/test_uncertainty_algorithms.py`).
 
 ## References
 

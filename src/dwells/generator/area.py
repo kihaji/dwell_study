@@ -126,9 +126,10 @@ def download_area(name: str) -> None:
     nodes, edges = ox.graph_to_gdfs(G)
     nodes = nodes.reset_index()
     edges = edges.reset_index()
-    pl.DataFrame({"osmid": nodes["osmid"].astype("int64"), "lat": nodes["y"], "lon": nodes["x"]}).write_parquet(out / "nodes.parquet")
-    pl.DataFrame({"u": edges["u"].astype("int64"), "v": edges["v"].astype("int64"),
-                  "length_m": edges["length"].astype(float)}).write_parquet(out / "edges.parquet")
+    pl.DataFrame({"osmid": nodes["osmid"].to_numpy("int64"), "lat": nodes["y"].to_numpy(float),
+                  "lon": nodes["x"].to_numpy(float)}).write_parquet(out / "nodes.parquet")
+    pl.DataFrame({"u": edges["u"].to_numpy("int64"), "v": edges["v"].to_numpy("int64"),
+                  "length_m": edges["length"].to_numpy(float)}).write_parquet(out / "edges.parquet")
 
     tags = {"building": True, "amenity": True, "shop": True, "leisure": ["park", "fitness_centre", "sports_centre"], "office": True}
     feats = ox.features_from_point(cfg["center"], tags=tags, dist=cfg["dist_m"])

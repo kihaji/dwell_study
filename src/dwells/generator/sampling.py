@@ -67,8 +67,8 @@ def _outages(rng, times, t0, t1, rate_per_day, hours):
     return times[keep]
 
 
-def _gps_times(rng, stays, t0, t1, base_range=(10, 60), throttle=True):
-    base = rng.uniform(*base_range)
+def _gps_times(rng, stays, t0, t1):
+    base = rng.uniform(10, 60)
     out = []
     arrive, depart = stays[:, 0], stays[:, 1]
     # moving segments: between stays
@@ -78,9 +78,7 @@ def _gps_times(rng, stays, t0, t1, base_range=(10, 60), throttle=True):
     for a, d in zip(arrive, depart):
         warm = min(d, a + 600)
         out.append(np.arange(a, warm, base) + rng.uniform(0, base))
-        if d > warm and not throttle:
-            out.append(np.arange(warm, d, base) + rng.uniform(0, base))
-        elif d > warm:
+        if d > warm:
             step = rng.uniform(240, 360)
             out.append(np.arange(warm, d, step) + rng.uniform(0, step))
     t = np.sort(np.concatenate(out)) if out else np.array([])
@@ -149,9 +147,9 @@ class _Towers:
         return ox, oy, sa, sb, az_major % 180
 
 
-def _sample_agent(rng, profile, knots, stays, t0, t1, utc, towers, hubs, calibration_noise, outlier_rate, gps_opts):
+def _sample_agent(rng, profile, knots, stays, t0, t1, utc, towers, hubs, calibration_noise, outlier_rate):
     if profile == "gps":
-        t = _gps_times(rng, stays, t0, t1, **gps_opts)
+        t = _gps_times(rng, stays, t0, t1)
     elif profile == "cdr":
         t = _bursts(rng, _poisson_times(rng, t0, t1, rng.lognormal(np.log(1.2), 0.6), utc), 0.8, 300)
         t = _outages(rng, t, t0, t1, 0.05, (2, 12))
@@ -206,8 +204,7 @@ def _sample_agent(rng, profile, knots, stays, t0, t1, utc, towers, hubs, calibra
 
 
 def sample(sim: SimResult, area: Area, profile: str, seed: int = 0,
-           calibration_noise: float = 0.25, outlier_rate: float = 0.02,
-           gps_opts: dict | None = None) -> pl.DataFrame:
+           calibration_noise: float = 0.25, outlier_rate: float = 0.02) -> pl.DataFrame:
     assert profile in PROFILES
     rng = np.random.default_rng([seed, PROFILES.index(profile)])
     towers = _Towers(area, seed) if profile == "cdr" else None
@@ -220,7 +217,7 @@ def sample(sim: SimResult, area: Area, profile: str, seed: int = 0,
         st = stays_by_id[aid].sort("dwell_id")
         stays = np.c_[st["arrive"].to_numpy(), st["depart"].to_numpy(), rad[st["place_id"].to_numpy()]]
         t, x, y, ox, oy, sa, sb, az, src, si = _sample_agent(
-            rng, profile, knots, stays, sim.t0, sim.t1, utc, towers, hubs, calibration_noise, outlier_rate, gps_opts or {})
+            rng, profile, knots, stays, sim.t0, sim.t1, utc, towers, hubs, calibration_noise, outlier_rate)
         if len(t) == 0:
             continue
         lat, lon = geo.from_enu(ox, oy, *area.center)

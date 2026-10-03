@@ -16,9 +16,13 @@ Code map:
 | `src/dwells/generator/build.py` | Catalog specs; writes `events.parquet`, `truth_*.parquet`, `meta.json` |
 | `src/dwells/io.py` | `shape_view`: turns the master events frame into the 5 evaluated shapes |
 | `src/dwells/uncertainty.py` | CEP50 / ellipse / covariance conversions |
-| `src/dwells/metrics.py` | `colocation_truth`, `dwell_metrics` (uses `n_events` for the observable-recall metric) |
+| `src/dwells/metrics.py` | `dwell_metrics` (uses `n_events` for the observable-recall metric) |
 
-Rebuild: `uv run python -m dwells.generator.build [--only NAME] [--group dev|eval|scale] [--list]`.
+Rebuild: `uv run python -m dwells.generator.build [--only NAME] [--group dev|eval] [--list]`.
+
+> Focus branch: the scale-benchmark datasets (`scale_*`) and the GeoLife / PoL / Foursquare
+> loaders were removed from this branch (they live on `main`); their rows below are kept
+> only where they describe the generator's behavior.
 
 ---
 
@@ -219,8 +223,7 @@ For gps, each regular block (travel leg, warm-up, throttled stay) gets a single 
 offset U(0, period). A block's last samples can spill up to one period into the next segment.
 
 The throttle uses the true stay intervals. It is an oracle, with no motion-detection delay on
-departure. `scale_gps_single_1m` uses `base_range = (4, 6)` and `throttle = False`, which gives
-about 5 s sampling the whole time.
+departure.
 
 ### Error models
 
@@ -343,7 +346,7 @@ Observability in the evaluation: `metrics.dwell_metrics` keeps true dwells with
 `duration_s ≥ min_duration_s` and reports plain recall plus `recall_observable`, where observable
 means `n_events ≥ 2`.
 
-### Colocation truth (`metrics.colocation_truth`)
+### Colocation truth (main branch `metrics.colocation_truth`; not on this branch)
 
 This is a self-join of `truth_dwells` on **`place_id`** over pairs with `id_a < id_b`:
 
@@ -368,11 +371,9 @@ neither person has an event during the overlap.
 
 ## 6. Catalog
 
-Specs come from `build.catalog()`. `dev_*` uses seed 11, `eval_*` seed 1, `scale_gps_*` seed 5,
-`scale_adtech_*` seed 6 and the single-id set seed 7. `sim` is seeded by the spec seed only, so
+Specs come from `build.catalog()`. `dev_*` uses seed 11 and `eval_*` seed 1. `sim` is seeded by the spec seed only, so
 **within one area and seed the gps, cdr and adtech datasets share the same agents and true stays**.
-Cross-profile comparisons are therefore paired. Scale sets with different `n_agents` get different
-workplace pools, so they are not nested subsets of each other.
+Cross-profile comparisons are therefore paired.
 
 Stats come from `meta.json` (`sampling.describe`). Gaps are consecutive-event gaps within an id,
 over all ids. σ is `sig_a`.
@@ -391,15 +392,6 @@ over all ids. σ is `sig_a`.
 | eval_suburban_gps | suburban | gps | 100 | 21 | 839,210 | 399.6 | 266 / 349 | 15.3 / 37.4 | 7,022 | 1.3 |
 | eval_suburban_cdr | suburban | cdr | 100 | 21 | 86,559 | 41.2 | 246 / 8,954 | 861.5 / 861.5 | 7,022 | 0.8 |
 | eval_suburban_adtech | suburban | adtech | 100 | 21 | 83,626 | 39.9 | 112 / 9,792 | 26.8 / 5,866.0 | 7,022 | 0.9 |
-| scale_gps_1 | suburban | gps | 1 | 28 | 9,849 | 351.8 | 270 / 338 | 15.8 / 37.8 | 106 | 0.1 |
-| scale_gps_8 | suburban | gps | 8 | 28 | 97,283 | 434.3 | 257 / 347 | 14.9 / 36.9 | 816 | 0.2 |
-| scale_gps_80 | suburban | gps | 80 | 28 | 907,807 | 405.3 | 264 / 349 | 15.2 / 37.2 | 7,843 | 1.3 |
-| scale_gps_800 | suburban | gps | 800 | 28 | 9,367,454 | 418.2 | 262 / 348 | 15.0 / 37.1 | 77,891 | 12.9 |
-| scale_gps_single_1m | suburban | gps (5 s, no throttle) | 1 | 60 | 957,479 | 15,958.0 | 5 / 5 | 16.9 / 39.0 | 167 | 0.6 |
-| scale_adtech_20 | suburban | adtech | 20 | 28 | 19,719 | 35.2 | 125 / 12,267 | 27.0 / 6,016.6 | 1,974 | 0.2 |
-| scale_adtech_200 | suburban | adtech | 200 | 28 | 197,517 | 35.3 | 115 / 11,451 | 26.6 / 5,911.8 | 19,362 | 1.9 |
-| scale_adtech_2000 | suburban | adtech | 2,000 | 28 | 1,969,661 | 35.2 | 113 / 11,500 | 26.7 / 5,889.6 | 193,666 | 18.4 |
-| scale_adtech_18000 | suburban | adtech | 18,000 | 28 | 16,494,494 | 32.7 | 118 / 12,500 | 26.6 / 5,894.7 | 1,747,991 | 216.0 |
 
 Things to note in this table:
 - The gps median gap (about 4.5 min) is set by the stationary throttle, since 84 % of events fall
@@ -409,8 +401,6 @@ Things to note in this table:
   urban are exactly its suburban timestamps shifted by 1 h (the UTC offset difference). Only
   positions and truth differ.
 - CDR σ is one constant per area (see section 3), so shapes 2 and 3 add only the azimuth for cdr.
-- `scale_gps_single_1m` has 957,479 events, slightly under the 1M its name suggests, because
-  outages remove events.
 
 ### True dwell durations by category
 
@@ -550,20 +540,12 @@ How to read these:
 ## 8. Public datasets (summary)
 
 Full details, licenses and caveats are in [`public_datasets.md`](public_datasets.md) (section
-"Ingestion"). Each `data/public/<name>/` has the same layout as a synthetic set: master
-`events.parquet`, optional `truth_*.parquet`, and `meta.json`. GeoLife, STAGA and PoL have no
-accuracy fields. They get a nominal circular σ = 8 m and unperturbed positions (true = observed),
-so shapes 2 and 3 carry no information on them.
+"Ingestion"). On this branch only STAGA is ingested (`uv run python -m dwells.public.build`); the
+GeoLife, PoL and Foursquare loaders live on `main`. `data/public/staga/` has the same layout as a
+synthetic set: master `events.parquet`, `truth_*.parquet` and `meta.json`. STAGA has no accuracy
+fields, so it gets a nominal circular σ = 8 m with unperturbed positions (true = observed), and
+shapes 2 and 3 carry no information on it.
 
 | Dir | Source | Events | Ids | Truth | Gap p50 / p95 | Notes |
 |---|---|---:|---:|---|---|---|
 | `staga` | STAGA GPS + travel diary (CC BY 4.0) | 122,808 | 1 | 689 diary stops (min 59 s) | 10 s / 110 s | Dates shifted by the authors to 2000; anonymized coordinates with jumps |
-| `pol` | PoL staypoint benchmark, clean variant (CC BY-NC-ND, local use only) | 21,600,997 | 500 | 65,873 staypoints (min 60 s) | 60 s / 60 s | `place_id` is per agent |
-| `pol_50` | first 50 PoL ids by string sort (`public.build --subset pol pol_50 50`) | 2,160,099 | 50 | 7,088 | as pol | Used for evaluating slow algorithms. **Its `meta.json` stats are inherited from `pol`** (see note) |
-| `geolife_top20` | GeoLife 1.3, the 20 users with the most points | 14,768,085 | 20 | none | 2 s / 5 s | Realism and scaling only |
-| `geolife_all` | GeoLife 1.3, all users | 24,876,977 | 182 | none | 2 s / 5 s | |
-| `foursquare_nyc` | TSMC2014 NYC check-ins | 227,428 | 1,083 | 227,428 visits (`truth_visits`) | 4.9 h / 5.0 d | Venue position plus synthetic adtech-style gps/wifi/cell error, honest, no calibration noise |
-
-Note on `pol_50`: `subset()` copies the source `meta.json` and only adds `subset_of` and `n_ids`,
-so its `stats` block (events 21,600,997, ids 500) and `truth_dwells` (65,873) describe the full
-`pol`. The real counts, taken from the parquet files, are the ones in the table above.

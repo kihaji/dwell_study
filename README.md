@@ -12,9 +12,10 @@ plan is in `PLAN_UA.md`.
 uv sync --extra app
 uv run pytest
 
-# data (synthetic catalog + OSM geocode index; once)
+# data (synthetic catalog, STAGA public set, OSM geocode index; once)
 uv run python -m dwells.generator.build --group dev
 uv run python -m dwells.generator.build --group eval
+uv run python -m dwells.public.build
 uv run python -c "from dwells.pol.geocode import build_index_for_area as b; b('urban'); b('suburban')"
 
 # tuning / robustness (WSL2: wrap heavy runs in a memory cap)

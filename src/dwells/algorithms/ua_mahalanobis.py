@@ -9,16 +9,18 @@ Per id, in time order:
 * The open stay keeps the information-weighted (inverse-covariance) estimate of
   mu and its covariance P. A new event joins when
   (z - mu)^T (C_i + v I + P)^-1 (z - mu) <= chi2_2(gate_p).
-* Coarse events (1-sigma > coarse_factor * radius_m) cannot discriminate places:
-  they never start, break or extend a stay. A consistent coarse event is attached
-  only if a later informative event confirms the stay continued past it.
+* Coarse events (1-sigma > coarse_sigma_m and > coarse_rel x the id's median 1-sigma)
+  cannot discriminate places: they never start, break or extend a stay. A consistent
+  coarse event is attached only if a later informative event confirms the stay
+  continued past it.
 * Robust breaking: the stay closes after ``k_break`` consecutive informative events
   fail the gate (single multipath outliers are skipped), when the misses persisted
   for ``confirm_s`` seconds before the id was seen back in place (a real short trip),
   or when no informative event arrives within ``max_gap_s``. The next stay is
   re-seeded at the first failing event.
-* A closed stay is a dwell if it has >= ``min_events`` informative events and
-  (last - first informative time) >= ``min_duration_s``.
+* A closed stay is a dwell if it has >= ``min_events`` informative events and its
+  estimated span (start/end half-way to the neighboring informative fixes, see
+  detect_with_members) is >= ``min_duration_s``.
 The dwell centroid is the fused estimate, reported with its 1-sigma ellipse.
 Shape 1 data uses a constant ``default_sigma_m`` so the method degrades to a
 Gaussian-gated running-centroid detector with outlier tolerance.
@@ -36,8 +38,7 @@ from dwells.algorithms.common import dwells_from_labels, prepare
 
 
 @numba.njit(cache=True)
-def _kernel(starts, t, x, y, cee, cnn, cen, v, gate, coarse, k_break, max_gap, min_events, min_duration,
-            confirm):
+def _kernel(starts, t, x, y, cee, cnn, cen, v, gate, coarse, k_break, max_gap, min_events, confirm):
     n = len(t)
     labels = np.full(n, -1, np.int64)
     buf = np.empty(n, np.int64)  # pending coarse candidates of the open stay
@@ -47,7 +48,7 @@ def _kernel(starts, t, x, y, cee, cnn, cen, v, gate, coarse, k_break, max_gap, m
         i = a
         is_open = False
         c0, n_inf, n_buf, n_fail, first_fail = a, 0, 0, 0, a
-        t_first, t_last = 0.0, 0.0
+        t_last = 0.0
         Iee, Inn, Ien, bx, by = 1.0, 1.0, 0.0, 0.0, 0.0
         while i <= b:
             close = False
@@ -56,7 +57,7 @@ def _kernel(starts, t, x, y, cee, cnn, cen, v, gate, coarse, k_break, max_gap, m
             elif is_open and not coarse[i] and t[i] - t_last > max_gap:
                 close = True
             if close:
-                if n_inf >= min_events and t_last - t_first >= min_duration:
+                if n_inf >= min_events:
                     nxt += 1
                 else:
                     for j in range(c0, i):
@@ -83,7 +84,6 @@ def _kernel(starts, t, x, y, cee, cnn, cen, v, gate, coarse, k_break, max_gap, m
                 bx, by = Iee * x[i] + Ien * y[i], Ien * x[i] + Inn * y[i]
                 labels[i] = nxt
                 n_inf, n_buf, n_fail = 1, 0, 0
-                t_first = t[i]
                 t_last = t[i]
                 i += 1
                 continue
@@ -102,7 +102,7 @@ def _kernel(starts, t, x, y, cee, cnn, cen, v, gate, coarse, k_break, max_gap, m
                 continue
             if d2 <= gate and n_fail > 0 and confirm > 0 and t[i] - t[first_fail] >= confirm:
                 # the id was away for >= confirm seconds: the misses were a real departure
-                if n_inf >= min_events and t_last - t_first >= min_duration:
+                if n_inf >= min_events:
                     nxt += 1
                 else:
                     for j in range(c0, i):
@@ -134,7 +134,7 @@ def _kernel(starts, t, x, y, cee, cnn, cen, v, gate, coarse, k_break, max_gap, m
                 n_fail += 1
                 if n_fail >= k_break:
                     # close the stay at its last confirmed event; re-seed at first_fail
-                    if n_inf >= min_events and t_last - t_first >= min_duration:
+                    if n_inf >= min_events:
                         nxt += 1
                     else:
                         for j in range(c0, i + 1):
@@ -148,73 +148,59 @@ def _kernel(starts, t, x, y, cee, cnn, cen, v, gate, coarse, k_break, max_gap, m
     return labels
 
 
-def detect(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float = 100,
-           max_gap_s: float = 3600, gate_p: float = 0.99, coarse_factor: float = 3.0,
-           k_break: int = 2, min_events: int = 2, default_sigma_m: float = 10.0,
-           boundary: str = "midpoint", duration_basis: str = "estimated",
-           coarse_sigma_m: float | None = None, confirm_s: float | None = None,
-           coarse_rel: float | None = None, **_) -> pl.DataFrame:
-    """Dwells only; see detect_with_members for the event-to-dwell membership.
-
-    See module docstring. ``boundary``: "observed" (first/last member event) or
-    "midpoint" (half-way to the previous/next event of the id, capped at max_gap_s / 2).
-    ``duration_basis``: which span ("observed" or "estimated") must reach min_duration_s.
-    ``coarse_sigma_m``: absolute 1-sigma (m) above which a fix is coarse; overrides
-    coarse_factor * radius_m (place size and fix vagueness are separate questions).
-    ``confirm_s``: fewer than k_break misses still end the stay when the id stayed away
-    that long (the next in-place fix came >= confirm_s after the first miss); separates
-    brief GPS outliers from real short trips seen as a single fix in sparse data.
-    Extra output columns: first_event_ts, last_event_ts, arrive_after/arrive_by,
-    depart_after/depart_by: the unobserved arrival/departure windows, bounded by the
-    nearest informative (non-coarse) fixes outside the dwell; null at track ends."""
-    return detect_with_members(events, min_duration_s=min_duration_s, radius_m=radius_m, max_gap_s=max_gap_s,
-                               gate_p=gate_p, coarse_factor=coarse_factor, k_break=k_break,
-                               min_events=min_events, default_sigma_m=default_sigma_m, boundary=boundary,
-                               duration_basis=duration_basis, coarse_sigma_m=coarse_sigma_m,
-                               confirm_s=confirm_s, coarse_rel=coarse_rel)[0].drop("dwell_label")
+def detect(events: pl.DataFrame, **params) -> pl.DataFrame:
+    """Dwells only (see detect_with_members for parameters and the membership arrays)."""
+    return detect_with_members(events, **params)[0].drop("dwell_label")
 
 
-def detect_with_members(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float = 100,
-                        max_gap_s: float = 3600, gate_p: float = 0.99, coarse_factor: float = 3.0,
-                        k_break: int = 2, min_events: int = 2, default_sigma_m: float = 10.0,
-                        boundary: str = "midpoint", duration_basis: str = "estimated",
-                        coarse_sigma_m: float | None = None, confirm_s: float | None = None,
-                        coarse_rel: float | None = None, **_):
-    """Returns (dwells with a ``dwell_label`` column, per-event dwell_label array (-1 =
-    not in a kept dwell), per-event coarse mask, per-event 1-sigma)."""
+def detect_with_members(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float = 75,
+                        max_gap_s: float = 43200, gate_p: float = 0.99, k_break: int = 3,
+                        confirm_s: float = 900, coarse_sigma_m: float = 1000.0, coarse_rel: float = 3.0,
+                        min_events: int = 2, default_sigma_m: float = 10.0, **_):
+    """Detect dwells. Defaults are the tuned base preset (dwells.presets, docs/tuning.md).
+
+    * ``min_duration_s``: the dwell definition, checked on the estimated span.
+    * ``radius_m``: spread of true positions inside a place (sets the gate, v = radius^2/4).
+    * ``max_gap_s``: longest silence (between informative fixes) a stay can bridge.
+    * ``gate_p``: chi-square probability of the membership gate.
+    * ``k_break`` / ``confirm_s``: a stay ends after k_break consecutive misses, or when the
+      id was away >= confirm_s before being seen back in place (0 disables).
+    * ``coarse_sigma_m`` / ``coarse_rel``: a fix is coarse (never starts, ends, extends or
+      moves a stay) when its 1-sigma exceeds coarse_sigma_m AND coarse_rel x the id's
+      median 1-sigma.
+    * ``min_events``: informative fixes needed for a dwell.
+    * ``default_sigma_m``: 1-sigma assumed when events carry no accuracy fields.
+
+    Start/end are estimated half-way to the nearest informative fix outside the dwell
+    (capped at max_gap_s / 2). Output columns beyond the DWELLS schema: first_event_ts,
+    last_event_ts, arrive_after/arrive_by, depart_after/depart_by (the unobserved arrival /
+    departure windows; null at track ends) and dwell_label.
+
+    Returns (dwells, per-event dwell_label array (-1 = not in a kept dwell), per-event
+    coarse mask, per-event 1-sigma)."""
     a = prepare(events, default_sigma_m)
     v = radius_m**2 / 4
     sigma = np.sqrt((a.cee + a.cnn) / 2)
-    coarse = sigma > (coarse_sigma_m if coarse_sigma_m is not None else coarse_factor * radius_m)
-    if coarse_rel is not None:
-        # only fixes much vaguer than this id's typical fix are coarse (robust to a
-        # uniformly coarse source or a mis-scaled accuracy field)
-        med = np.repeat([np.median(sigma[s:e]) for s, e in zip(a.starts[:-1], a.starts[1:])], np.diff(a.starts))
-        coarse &= sigma > coarse_rel * med
-    md_kernel = min_duration_s if duration_basis == "observed" else 0.0
+    # only fixes that are vague in absolute terms AND much vaguer than this id's typical fix
+    # are coarse (robust to a uniformly coarse source or a mis-scaled accuracy field)
+    med = np.repeat([np.median(sigma[s:e]) for s, e in zip(a.starts[:-1], a.starts[1:])], np.diff(a.starts))
+    coarse = (sigma > coarse_sigma_m) & (sigma > coarse_rel * med)
     labels = _kernel(a.starts, a.t, a.x, a.y, a.cee, a.cnn, a.cen, v, chi2.ppf(gate_p, 2),
-                     coarse, k_break, max_gap_s, min_events, md_kernel, confirm_s or 0.0)
-    # a dwell's start/end come from informative events only (coarse ones lie inside the span)
-    d = dwells_from_labels(events, labels, md_kernel, centroid="fused",
-                           default_sigma_m=default_sigma_m, extra_var=v, keep_label=True)
+                     coarse, k_break, max_gap_s, min_events, confirm_s or 0.0)
+    d = dwells_from_labels(events, labels, default_sigma_m=default_sigma_m, extra_var=v)
     if d.height == 0:
-        d = d.drop("label", strict=False).with_columns(dwell_label=pl.lit(None, dtype=pl.Int64))
         return d, np.full(events.height, -1), coarse, sigma
-    informative = ~coarse
-    d = d.join(_windows(events, labels, informative), on="label").rename({"label": "dwell_label"})
-    if boundary == "midpoint":
-        cap = pl.duration(seconds=max_gap_s / 2)
-        d = d.with_columns(
-            start_ts=pl.when(pl.col("arrive_after").is_null()).then(pl.col("first_event_ts")).otherwise(
-                pl.max_horizontal(pl.col("first_event_ts") - (pl.col("first_event_ts") - pl.col("arrive_after")) / 2,
-                                  pl.col("first_event_ts") - cap)),
-            end_ts=pl.when(pl.col("depart_by").is_null()).then(pl.col("last_event_ts")).otherwise(
-                pl.min_horizontal(pl.col("last_event_ts") + (pl.col("depart_by") - pl.col("last_event_ts")) / 2,
-                                  pl.col("last_event_ts") + cap)),
-        )
-    d = d.with_columns(duration_s=(pl.col("end_ts") - pl.col("start_ts")).dt.total_seconds())
-    span = (pl.col("last_event_ts") - pl.col("first_event_ts")).dt.total_seconds()
-    d = d.filter((span if duration_basis == "observed" else pl.col("duration_s")) >= min_duration_s)
+    d = d.join(_windows(events, labels, ~coarse), on="dwell_label")
+    cap = pl.duration(seconds=max_gap_s / 2)
+    d = d.with_columns(
+        start_ts=pl.when(pl.col("arrive_after").is_null()).then(pl.col("first_event_ts")).otherwise(
+            pl.max_horizontal(pl.col("first_event_ts") - (pl.col("first_event_ts") - pl.col("arrive_after")) / 2,
+                              pl.col("first_event_ts") - cap)),
+        end_ts=pl.when(pl.col("depart_by").is_null()).then(pl.col("last_event_ts")).otherwise(
+            pl.min_horizontal(pl.col("last_event_ts") + (pl.col("depart_by") - pl.col("last_event_ts")) / 2,
+                              pl.col("last_event_ts") + cap)),
+    ).with_columns(duration_s=(pl.col("end_ts") - pl.col("start_ts")).dt.total_seconds())
+    d = d.filter(pl.col("duration_s") >= min_duration_s)
     kept = np.isin(labels, d["dwell_label"].to_numpy())
     return d, np.where(kept, labels, -1), coarse, sigma
 
@@ -240,7 +226,7 @@ def _windows(events: pl.DataFrame, labels: np.ndarray, informative: np.ndarray) 
     has_prev = (p >= 0) & (ids[prev] == ids[first])
     has_next = (q < len(inf_idx)) & (ids[nxt] == ids[last])
     return pl.DataFrame({
-        "label": lab[starts], "first_event_ts": ts.gather(first), "last_event_ts": ts.gather(last),
+        "dwell_label": lab[starts], "first_event_ts": ts.gather(first), "last_event_ts": ts.gather(last),
         "arrive_after": ts.gather(prev), "arrive_by": ts.gather(first),
         "depart_after": ts.gather(last), "depart_by": ts.gather(nxt),
     }).with_columns(

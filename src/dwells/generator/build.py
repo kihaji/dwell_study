@@ -17,7 +17,7 @@ import argparse
 import hashlib
 import json
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 
 import polars as pl
 
@@ -36,7 +36,6 @@ class Spec:
     n_agents: int
     n_days: int
     seed: int = 0
-    gps_opts: dict = field(default_factory=dict)
     group: str = "eval"
 
 
@@ -57,7 +56,7 @@ def build(spec: Spec, out_root=None) -> dict:
     cfg = SimConfig(n_agents=spec.n_agents, n_days=spec.n_days, seed=spec.seed,
                     utc_offset_h=UTC_OFFSET[spec.area])
     sim = simulate(area, cfg)
-    ev = sampling.sample(sim, area, spec.profile, seed=spec.seed, gps_opts=spec.gps_opts)
+    ev = sampling.sample(sim, area, spec.profile, seed=spec.seed)
     ev.write_parquet(out / "events.parquet")
 
     counts = ev.filter(pl.col("truth_dwell_id").is_not_null()).group_by(

@@ -235,6 +235,10 @@ All of the above returned 200 on 2026-09-30.
 
 ## Ingestion
 
+> Focus branch: only the STAGA loader (`src/dwells/public/staga.py`) is kept; the PoL,
+> GeoLife and Foursquare ingestion described below lives on `main`.
+
+
 Code: `src/dwells/public/` (one module per dataset), tests in `tests/test_public.py`. Run:
 
 ```bash

@@ -40,35 +40,23 @@ def prepare(events: pl.DataFrame, default_sigma_m: float = 10.0) -> Arrays:
                   ev["cov_ee"].to_numpy(), ev["cov_nn"].to_numpy(), ev["cov_en"].to_numpy())
 
 
-def dwells_from_labels(events: pl.DataFrame, labels: np.ndarray, min_duration_s: float,
-                       centroid: str = "mean", min_events: int = 1,
-                       default_sigma_m: float = 10.0, extra_var: float = 0.0,
-                       keep_label: bool = False) -> pl.DataFrame:
-    """Aggregate events with label >= 0 into dwells (labels must be unique across ids).
+def dwells_from_labels(events: pl.DataFrame, labels: np.ndarray, default_sigma_m: float = 10.0,
+                       extra_var: float = 0.0) -> pl.DataFrame:
+    """Aggregate events with label >= 0 into dwells (labels unique across ids).
 
-    Start/end are the first/last event times. ``centroid``: mean | median | fused
-    (inverse-covariance weighted, which also yields a 1-sigma centroid ellipse);
-    ``extra_var`` (m^2) is added to each event's east/north variance before fusing,
-    e.g. the spread of true positions within a place. ``keep_label`` keeps the
-    label column so callers can join per-dwell extras.
+    Start/end are the first/last member event times; the centroid is the inverse-
+    covariance (fused) mean with its 1-sigma ellipse. ``extra_var`` (m^2) is added to each
+    event's east/north variance before fusing (spread of true positions within a place).
+    The label is returned as ``dwell_label``.
     """
     ev = events.with_columns(label=pl.Series(labels, dtype=pl.Int64)).filter(pl.col("label") >= 0)
     if ev.height == 0:
-        return schema.empty(schema.DWELLS)
-    agg = [pl.col("timestamp").min().alias("start_ts"), pl.col("timestamp").max().alias("end_ts"),
-           pl.len().alias("n_events")]
-    if centroid == "median":
-        agg += [pl.col("lat").median(), pl.col("lon").median()]
-    else:
-        agg += [pl.col("lat").mean(), pl.col("lon").mean()]
-    out = ev.group_by("id", "label", maintain_order=True).agg(agg)
-    if centroid == "fused":
-        out = out.drop("lat", "lon").join(_fused(ev, default_sigma_m, extra_var), on="label")
-    out = out.filter(
-        ((pl.col("end_ts") - pl.col("start_ts")).dt.total_seconds() >= min_duration_s)
-        & (pl.col("n_events") >= min_events)
-    )
-    return schema.validate_dwells(out if keep_label else out.drop("label"))
+        return schema.empty(schema.DWELLS).with_columns(dwell_label=pl.lit(None, dtype=pl.Int64))
+    out = ev.group_by("id", "label", maintain_order=True).agg(
+        pl.col("timestamp").min().alias("start_ts"), pl.col("timestamp").max().alias("end_ts"),
+        pl.len().alias("n_events"))
+    out = out.join(_fused(ev, default_sigma_m, extra_var), on="label")
+    return schema.validate_dwells(out.rename({"label": "dwell_label"}))
 
 
 def _fused(ev: pl.DataFrame, default_sigma_m: float, extra_var: float = 0.0) -> pl.DataFrame:
