@@ -38,7 +38,7 @@ def analyze(events: pl.DataFrame, profile: str = "mixed", params: dict | None = 
     # --- visits with global ids, grouped into places
     det = det.sort("id", "start_ts").with_columns(visit_id=pl.int_range(pl.len()).cast(pl.Int64))
     if det.height:
-        grouped, _ = places_mod.assign(det, method="mahalanobis", radius_m=place_radius_m)
+        grouped = places_mod.assign(det, radius_m=place_radius_m)
         det = det.join(grouped.select("visit_id", "place_id"), on="visit_id")
     else:
         det = det.with_columns(place_id=pl.lit(None, dtype=pl.Int64))

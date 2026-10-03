@@ -62,19 +62,6 @@ def test_monte_carlo_coverage(p):
     assert inside.mean() == pytest.approx(p, abs=0.005)
 
 
-def test_fuse_is_inverse_variance_mean():
-    x = np.array([0.0, 10.0])
-    y = np.array([0.0, 0.0])
-    # second point 4x variance -> weight 1/5
-    cee = np.array([1.0, 4.0])
-    cnn = np.array([1.0, 4.0])
-    cen = np.zeros(2)
-    fx, fy, fee, fnn, fen = U.fuse(x, y, cee, cnn, cen)
-    assert fx == pytest.approx(2.0)
-    assert fy == pytest.approx(0.0)
-    assert fee == pytest.approx(0.8)
-
-
 def _events(shape):
     base = {
         "id": ["a", "a"],

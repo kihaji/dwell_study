@@ -60,21 +60,6 @@ def mahalanobis2(dx, dy, cee, cnn, cen):
     return (cnn * dx**2 - 2 * cen * dx * dy + cee * dy**2) / det
 
 
-def fuse(x, y, cee, cnn, cen):
-    """Inverse-covariance (information) weighted mean of 2D points.
-
-    Returns (x, y, cov_ee, cov_nn, cov_en) of the fused estimate.
-    """
-    det = cee * cnn - cen**2
-    iee, inn, ien = cnn / det, cee / det, -cen / det
-    Iee, Inn, Ien = iee.sum(), inn.sum(), ien.sum()
-    bx = (iee * x + ien * y).sum()
-    by = (ien * x + inn * y).sum()
-    D = Iee * Inn - Ien**2
-    fee, fnn, fen = Inn / D, Iee / D, -Ien / D
-    return fee * bx + fen * by, fen * bx + fnn * by, fee, fnn, fen
-
-
 def with_covariance(events: pl.DataFrame, default_sigma_m: float = 30.0) -> pl.DataFrame:
     """Append cov_ee, cov_nn, cov_en, sigma_m columns derived from whatever error fields exist."""
     cols = set(events.columns)

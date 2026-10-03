@@ -31,26 +31,6 @@ DWELLS = {
     "azimuth": pl.Float64,
 }
 
-PLACES = {
-    "id": pl.String,
-    "place_id": pl.Int64,
-    "lat": pl.Float64,
-    "lon": pl.Float64,
-    "radius_m": pl.Float64,
-    "n_visits": pl.Int64,
-    "total_dwell_s": pl.Int64,
-    "first_seen": TS,
-    "last_seen": TS,
-}
-
-TRANSITIONS = {
-    "id": pl.String,
-    "from_place": pl.Int64,
-    "to_place": pl.Int64,
-    "depart_ts": TS,
-    "arrive_ts": TS,
-}
-
 COLOCATIONS = {
     "id_a": pl.String,
     "id_b": pl.String,
@@ -61,15 +41,6 @@ COLOCATIONS = {
     "overlap_s": pl.Int64,
     "kind": pl.String,  # "same_time" | "diff_time"
 }
-
-PREDICTIONS = {
-    "id": pl.String,
-    "from_place": pl.Int64,
-    "rank": pl.Int64,
-    "to_place": pl.Int64,
-    "prob": pl.Float64,
-}
-
 
 def empty(spec: dict) -> pl.DataFrame:
     return pl.DataFrame(schema=spec)

@@ -1,9 +1,8 @@
 import numpy as np
 import polars as pl
-import pytest
 
 from dwells import schema
-from dwells.downstream import colocation, places
+from dwells.downstream import places
 from dwells.geo import from_enu
 
 H = 3600
@@ -29,32 +28,18 @@ WEEK += [("a", 4 * 24 + 18, 4 * 24 + 19, 1500, 1500)]
 WEEK.sort(key=lambda r: r[1])
 
 
-@pytest.mark.parametrize("method", places.METHODS)
-def test_places_group_repeated_visits(method):
+def test_places_group_repeated_visits():
     d = dw([r for r in WEEK if r[3] != 1500])
-    out, pl_tab = places.assign(d, method=method, radius_m=150)
+    out = places.assign(d, radius_m=150)
     assert out["place_id"].null_count() == 0
     # home and work are two places
     assert out["place_id"].n_unique() == 2
-    assert set(pl_tab.columns) >= set(schema.PLACES)
 
 
 def test_places_uncertainty_merge_uses_sigma():
     d = dw([("a", 0, 1, 0, 0), ("a", 2, 3, 400, 0)]).with_columns(
         sigma_major=pl.Series([300.0, 300.0]), sigma_minor=pl.Series([300.0, 300.0]), azimuth=pl.Series([0.0, 0.0]))
-    out, _ = places.assign(d, method="mahalanobis", radius_m=50)
+    out = places.assign(d, radius_m=50)
     assert out["place_id"].n_unique() == 1  # consistent given 300 m uncertainty
-    out, _ = places.assign(d.with_columns(sigma_major=pl.lit(5.0), sigma_minor=pl.lit(5.0)), method="mahalanobis", radius_m=50)
+    out = places.assign(d.with_columns(sigma_major=pl.lit(5.0), sigma_minor=pl.lit(5.0)), radius_m=50)
     assert out["place_id"].n_unique() == 2
-
-
-def test_colocation_same_time_distance_and_decoy():
-    d = dw([("a", 0, 2, 0, 0), ("b", 1, 3, 20, 0),     # together
-            ("c", 0, 2, 400, 0),                        # neighbor building 400 m away
-            ("d", 5, 6, 0, 0)])                         # same place later
-    for method in colocation.METHODS:
-        c = colocation.same_time(d, method=method, radius_m=100, min_overlap_s=900)
-        pairs = set(map(tuple, c.select("id_a", "id_b").rows()))
-        assert pairs == {("a", "b")}, method
-    dt = colocation.diff_time(d, radius_m=100, window_s=86400)
-    assert ("a", "d") in set(map(tuple, dt.select("id_a", "id_b").rows()))

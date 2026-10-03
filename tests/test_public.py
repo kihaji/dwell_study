@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 
 import numpy as np
@@ -87,7 +88,7 @@ def test_write_dataset_loads_all_shapes(tmp_path):
     for shape in io.SHAPES:
         out = io.load_events(tmp_path / "s", shape)
         assert out.height == 5
-    assert io.load_meta(tmp_path / "s")["source_url"] == "x"
+    assert json.loads((tmp_path / "s" / "meta.json").read_text())["source_url"] == "x"
     # master frame keeps only the canonical columns
     assert pl.read_parquet(tmp_path / "s" / "events.parquet").columns == [
         "id", "timestamp", "lat", "lon", "true_lat", "true_lon", "source", "sig_a", "sig_b", "az",

@@ -8,13 +8,12 @@ all shapes share identical lat/lon so shape comparisons isolate the error info.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import polars as pl
 
 from dwells import schema
-from dwells.uncertainty import CEP50_K, k_factor
+from dwells.uncertainty import CEP50_K
 
 SHAPES = ("1", "2", "3_p68", "3_p95", "3_mixed")
 TRUTH_COLS = ("true_lat", "true_lon", "source", "truth_dwell_id")
@@ -54,12 +53,6 @@ def load_events(dataset_dir: str | Path, shape: str = "1", keep_truth: bool = Fa
 def load_truth(dataset_dir: str | Path, table: str) -> pl.DataFrame:
     return pl.read_parquet(Path(dataset_dir) / f"truth_{table}.parquet")
 
-
-def load_meta(dataset_dir: str | Path) -> dict:
-    return json.loads((Path(dataset_dir) / "meta.json").read_text())
-
-
-_ = k_factor  # shape math above mirrors uncertainty.k_factor
 
 
 def dataset_dirs() -> dict[str, Path]:

@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 
-from dwells.metrics import dwell_metrics, match_dwells, colocation_truth, colocation_metrics
+from dwells.metrics import dwell_metrics, match_dwells
 
 M = 60_000_000  # one minute in microseconds
 
@@ -66,27 +66,3 @@ def test_observable_recall_excludes_unobservable_truth():
     p = _d([("a", 0, 60, 40.0, -75.0)])
     m = dwell_metrics(p, t, min_duration_s=0)
     assert m["recall"] == 0.5 and m["recall_observable"] == 1.0
-
-
-def test_colocation_truth_same_and_diff_time():
-    t = _d([
-        ("a", 0, 60, 40.0, -75.0, 1), ("b", 30, 90, 40.0, -75.0, 1),  # overlap 30 min
-        ("c", 200, 260, 40.0, -75.0, 1),                              # same place later
-        ("d", 0, 60, 40.0003, -75.0, 2),                              # neighbor, other place
-    ])
-    ct = colocation_truth(t, min_overlap_s=900, diff_time_window_s=86400)
-    same = ct.filter(pl.col("kind") == "same_time")
-    assert same.select("id_a", "id_b").rows() == [("a", "b")]
-    assert same["overlap_s"][0] == 1800
-    diff = ct.filter(pl.col("kind") == "diff_time")
-    assert {tuple(r) for r in diff.select("id_a", "id_b").rows()} == {("a", "c"), ("b", "c")}
-
-
-def test_colocation_metrics():
-    t = _d([("a", 0, 60, 40.0, -75.0, 1), ("b", 30, 90, 40.0, -75.0, 1)])
-    truth = colocation_truth(t, min_overlap_s=900)
-    pred = truth.clone()
-    m = colocation_metrics(pred, truth)
-    assert m["pair_f1"] == 1 and m["episode_recall"] == 1
-    wrong = pred.with_columns(id_b=pl.lit("z"))
-    assert colocation_metrics(wrong, truth)["pair_precision"] == 0

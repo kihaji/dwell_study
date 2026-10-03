@@ -6,8 +6,7 @@ dwell's 1-sigma ellipse when the detector reports one, plus within-place spread
 (radius_m / 2)^2); otherwise it starts a new place. Dwells are processed most-precise
 first. Chosen over DBSCAN, HDBSCAN, GMM and H3 grouping on held-out data (see
 docs/tuning.md, "Places"); those alternatives live on the main branch.
-Returns (dwells + place_id, places table in the PLACES schema). place_id is unique
-across ids.
+Returns the dwells with a ``place_id`` column (unique across ids).
 """
 
 from __future__ import annotations
@@ -16,11 +15,11 @@ import numpy as np
 import polars as pl
 from scipy.stats import chi2
 
-from dwells import geo, schema
+from dwells import geo
 from dwells.uncertainty import ellipse_to_cov
 
-METHODS = ("mahalanobis",)
 ONE_SIGMA_P = 1 - np.exp(-0.5)
+GATE = chi2.ppf(0.99, 2)
 
 
 def _dwell_cov(d: pl.DataFrame, radius_m: float):
@@ -60,15 +59,7 @@ def _mahalanobis_merge(x, y, cee, cnn, cen, gate):
     return labels
 
 
-def _cluster(method, x, y, cov):
-    if method != "mahalanobis":
-        raise ValueError(f"unknown place method {method!r}; only 'mahalanobis' is available")
-    if len(x) == 1:
-        return np.zeros(1, np.int64)
-    return _mahalanobis_merge(x, y, *cov, chi2.ppf(0.99, 2))
-
-
-def assign(dwells: pl.DataFrame, method: str = "mahalanobis", radius_m: float = 150) -> tuple[pl.DataFrame, pl.DataFrame]:
+def assign(dwells: pl.DataFrame, radius_m: float = 150) -> pl.DataFrame:
     d = dwells.sort("id", "start_ts")
     lat, lon = d["lat"].to_numpy(), d["lon"].to_numpy()
     ids = d["id"].to_numpy()
@@ -78,22 +69,8 @@ def assign(dwells: pl.DataFrame, method: str = "mahalanobis", radius_m: float = 
     bounds = np.r_[0, np.flatnonzero(ids[1:] != ids[:-1]) + 1, len(ids)] if d.height else np.array([0])
     for s, e in zip(bounds[:-1], bounds[1:]):
         x, y = geo.to_enu(lat[s:e], lon[s:e], np.median(lat[s:e]), np.median(lon[s:e]))
-        lab = _cluster(method, x, y, tuple(c[s:e] for c in cov))
+        lab = _mahalanobis_merge(x, y, *(c[s:e] for c in cov), GATE) if e - s > 1 else np.zeros(1, np.int64)
         lab = np.unique(lab, return_inverse=True)[1]
         place[s:e] = lab + off
         off += lab.max() + 1
-    d = d.with_columns(place_id=pl.Series(place, dtype=pl.Int64))
-    return d, place_table(d)
-
-
-def place_table(d: pl.DataFrame) -> pl.DataFrame:
-    g = d.group_by("id", "place_id").agg(
-        pl.col("lat").mean(), pl.col("lon").mean(),
-        pl.col("lat").alias("_lats"), pl.col("lon").alias("_lons"),
-        pl.len().alias("n_visits"), pl.col("duration_s").sum().alias("total_dwell_s"),
-        pl.col("start_ts").min().alias("first_seen"), pl.col("end_ts").max().alias("last_seen"),
-    )
-    rad = [float(np.max(geo.haversine_m(np.array(la), np.array(lo), c1, c2))) if len(la) else 0.0
-           for la, lo, c1, c2 in zip(g["_lats"].to_list(), g["_lons"].to_list(), g["lat"], g["lon"])]
-    g = g.with_columns(radius_m=pl.Series(rad)).drop("_lats", "_lons")
-    return g.select([pl.col(c).cast(t) for c, t in schema.PLACES.items()]).sort("id", "place_id")
+    return d.with_columns(place_id=pl.Series(place, dtype=pl.Int64))
