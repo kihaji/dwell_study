@@ -24,7 +24,7 @@ GATE = chi2.ppf(0.99, 2)
 
 def _dwell_cov(d: pl.DataFrame, radius_m: float):
     v = (radius_m / 2) ** 2
-    # a missing centroid ellipse counts as 1-sigma radius_m / 2 (as in colocation._cov)
+    # a missing centroid ellipse counts as 1-sigma radius_m / 2
     a = d["sigma_major"].fill_null(radius_m / 2).to_numpy()
     b = d["sigma_minor"].fill_null(radius_m / 2).to_numpy()
     az = d["azimuth"].fill_null(0.0).to_numpy()

@@ -72,14 +72,6 @@ QUALITY = {
     "visits": pl.Int64, "places": pl.Int64, "events_in_visits_frac": pl.Float64,
 }
 
-# Colocation is deliberately separate (to be deep-dived later): its own module
-# (dwells.downstream.colocation), table and docs section.
-COLOCATIONS = {
-    "id_a": pl.String, "id_b": pl.String, "visit_id_a": pl.Int64, "visit_id_b": pl.Int64,
-    "place_id_a": pl.Int64, "place_id_b": pl.Int64, "kind": pl.String,
-    "overlap_start": TS, "overlap_end": TS, "overlap_s": pl.Int64, "distance_m": pl.Float64,
-}
-
 TABLES = {"events": EVENTS, "visits": VISITS, "places": PLACES, "transitions": TRANSITIONS,
           "next_places": NEXT_PLACES, "presence": PRESENCE, "anomalies": ANOMALIES, "quality": QUALITY}
 

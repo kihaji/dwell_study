@@ -281,19 +281,6 @@ How much to trust everything else. Key indicators:
 The charts show reports per day (all vs. inside visits) and the distribution of stated
 accuracy (log scale: 10 m, 100 m, 1 km...).
 
-## Colocation (experimental)
-<!-- help:colocation -->
-Other identifiers seen at the selected place:
-
-- **same time:** their visits overlapped by at least 15 minutes with centers within 100 m.
-  A possible meeting, shared household or shared workplace.
-- **different time:** they visited the same spot within a week of each other without
-  overlapping, such as a shift change, the same gym or a dead drop.
-
-This feature is deliberately separated and will be reworked. Positions are not precise
-enough to tell next-door buildings apart, so neighbors are routinely flagged. Treat rows as
-leads to investigate, never as proof of contact.
-
 ## Tuning panel
 <!-- help:tuning -->
 Re-runs detection for the current identifier with different settings so you can see how

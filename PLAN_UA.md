@@ -18,7 +18,7 @@ app (Plotly Dash + deckgl-dash) for pattern-of-life exploration. Decisions from 
 | Radar | Per place (events / presence per UTC hour over all visits), with the selected visit overlaid. |
 | Graph | dash-cytoscape directed graph of places and transitions. |
 | Compute | Batch CLI writes the output tables for a whole dataset; the app reads them and offers a live tuning panel that re-runs the selected id with other parameters. |
-| Colocation | Included but isolated: its own module, output tables and docs, flagged for a later deep dive. |
+| Colocation | Initially included but isolated; later removed from this branch for a separate focused study (main keeps the evaluated code). |
 | Tuning deliverables | Input data contract doc; per-source presets with sensitivity; data-quality diagnostics (CLI + app); robustness experiments (miscalibrated accuracy, duplicates, stale fixes, clock jitter, sparse sampling). |
 | Algorithm changes | Allowed when held-out experiments justify them; failed ideas kept on `exp/ua-*` branches. |
 | Extra views | Timeline/Gantt, presence calendar (day x hour), data-quality panel, anomaly flags. |

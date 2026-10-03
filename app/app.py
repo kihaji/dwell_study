@@ -70,8 +70,7 @@ app.layout = html.Div(style={"fontFamily": "sans-serif", "background": "#fafafa"
                   dcc.Checklist(id="extent", value=["ellipse", "hull"], inline=True, options=[
                       {"label": html.Span([" uncertainty ellipse", info("uncertainty_ellipse")]), "value": "ellipse"},
                       {"label": html.Span([" convex hull", info("convex_hull")]), "value": "hull"},
-                      {"label": html.Span([" member events + links", info("member_events")]), "value": "member"},
-                      {"label": html.Span([" colocation", info("colocation")]), "value": "coloc"}])]),
+                      {"label": html.Span([" member events + links", info("member_events")]), "value": "member"}])]),
         html.Div(id="live-banner", style={"color": "#b71c1c", "fontWeight": "bold"}),
     ]),
     html.Div(style={"display": "grid", "gridTemplateColumns": "3fr 2fr", "gap": "10px", "marginTop": "8px"}, children=[
@@ -125,8 +124,6 @@ app.layout = html.Div(style={"fontFamily": "sans-serif", "background": "#fafafa"
              html.Div(style={"display": "grid", "gridTemplateColumns": "1fr 1fr"}, children=[
                  dcc.Graph(id="q-per-day", style={"height": "240px"}), dcc.Graph(id="q-acc", style={"height": "240px"})])),
     ]),
-    card(title("Colocation (experimental)", "colocation"), dash_table.DataTable(id="coloc-table", sort_action="native",
-                                                                               **TABLE_STYLE), style={"marginTop": "10px"}),
     card(html.Details([html.Summary(html.B(["Tuning: re-run detection for this identifier", info("tuning")])),
                        html.Div(style={"display": "grid", "gridTemplateColumns": "repeat(3, 1fr)", "gap": "12px"}, children=[
                            html.Div(["place radius (m)", dcc.Slider(id="t-radius", min=25, max=300, step=25, value=75)]),
@@ -313,7 +310,7 @@ def _quality(ds, uid, live):
               Input("sel", "data"), Input("extent", "value"), Input("days", "start_date"), Input("days", "end_date"))
 def _map(ds, uid, live, sel, extent, d0, d1):
     t = data.tables(ds, uid, live)
-    lay = layers.build(t, extent or [], sel["place_id"], sel["visit_id"], _range(d0, d1), "coloc" in (extent or []))
+    lay = layers.build(t, extent or [], sel["place_id"], sel["visit_id"], _range(d0, d1))
     p = t["places"]
     focus = p.filter(pl.col("place_id") == sel["place_id"]) if sel["place_id"] is not None else p
     view = {"longitude": float(focus["lon"].mean()), "latitude": float(focus["lat"].mean()), "zoom": 14} if focus.height else \
@@ -324,7 +321,7 @@ def _map(ds, uid, live, sel, extent, d0, d1):
 
 @app.callback(Output("place-card", "children"), Output("radar", "figure"), Output("weekday-hour-heat", "figure"),
               Output("visits-table", "data"), Output("visits-table", "columns"), Output("next-table", "data"),
-              Output("next-table", "columns"), Output("coloc-table", "data"), Output("coloc-table", "columns"),
+              Output("next-table", "columns"),
               Input("ds", "value"), Input("uid", "value"), Input("live", "data"), Input("sel", "data"),
               Input("visits-all", "value"))
 def _selection_views(ds, uid, live, sel, vall):
@@ -365,15 +362,7 @@ def _selection_views(ds, uid, live, sel, vall):
               "probability": f"{r['prob']:.0%}", "at least": f"{r['prob_low']:.0%}", "departures seen": r["n_from"]}
              for r in nx.iter_rows(named=True)]
     ncols = [{"name": c, "id": c} for c in ("rank", "next place", "probability", "at least", "departures seen")]
-    sel_vis = set(t["visits"].filter(pl.col("place_id") == pid)["visit_id"].to_list())
-    c = t["colocations"].filter(pl.col("visit_id_a").is_in(sel_vis) | pl.col("visit_id_b").is_in(sel_vis))
-    crows = [{"other identifier": r["id_b"] if r["id_a"] == uid else r["id_a"], "kind": r["kind"].replace("_", " "),
-              "from": fmt_ts(r["overlap_start"]), "to": fmt_ts(r["overlap_end"]),
-              "overlap": fmt_dur(r["overlap_s"]) if r["kind"] == "same_time" else "",
-              "distance m": round(r["distance_m"] or 0, 1)} for r in c.iter_rows(named=True)]
-    ccols = [{"name": k, "id": k} for k in ("other identifier", "kind", "from", "to", "overlap", "distance m")]
-    return (place_card, figures.radar(t, pid, vid), figures.weekday_hour_heatmap(t, pid), vrows, vcols, nrows, ncols,
-            crows, ccols)
+    return (place_card, figures.radar(t, pid, vid), figures.weekday_hour_heatmap(t, pid), vrows, vcols, nrows, ncols)
 
 
 def _range(d0, d1):

@@ -6,7 +6,6 @@
 
 ``events`` is a validated events frame (any input shape, see dwells.schema). Output
 tables and columns are defined in dwells.pol.schema and documented in docs/outputs.md.
-Colocation across identifiers is produced separately (dwells.pol.coloc).
 """
 
 from __future__ import annotations

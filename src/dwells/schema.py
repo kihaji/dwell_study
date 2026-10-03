@@ -31,17 +31,6 @@ DWELLS = {
     "azimuth": pl.Float64,
 }
 
-COLOCATIONS = {
-    "id_a": pl.String,
-    "id_b": pl.String,
-    "lat": pl.Float64,
-    "lon": pl.Float64,
-    "overlap_start": TS,
-    "overlap_end": TS,
-    "overlap_s": pl.Int64,
-    "kind": pl.String,  # "same_time" | "diff_time"
-}
-
 def empty(spec: dict) -> pl.DataFrame:
     return pl.DataFrame(schema=spec)
 

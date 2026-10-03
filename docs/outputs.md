@@ -21,7 +21,6 @@ visits.place_id   -> places.place_id
 transitions.from_place / to_place, next_places.from_place / to_place -> places.place_id
 presence.place_id -> places.place_id
 anomalies.visit_id -> visits.visit_id
-colocations.visit_id_a / visit_id_b -> visits.visit_id
 ```
 
 ## events: one row per input event
@@ -119,18 +118,3 @@ One row per flagged visit:
 | stale_frac | same position as the previous report at a new time |
 | speed_outlier_frac | implausible jumps (> 60 m/s and farther than 3× the combined error) |
 | visits, places, events_in_visits_frac | outcome summary |
-
-## colocations (separate file, experimental)
-
-Built by `dwells.pol.coloc.colocations()` from the visits table, kept apart from the
-rest for a later deep dive.
-
-| column | meaning |
-|---|---|
-| id_a, id_b, visit_id_a, visit_id_b, place_id_a, place_id_b | the pair and the visits involved |
-| kind | `same_time` (visits overlap ≥ 15 min, centers ≤ 100 m apart) or `diff_time` (same spot within 7 days but not overlapping; one row per pair, shortest gap) |
-| overlap_start, overlap_end, overlap_s | overlap interval (same_time) or the gap interval (diff_time, overlap_s = 0) |
-| distance_m | distance between the two visit centers |
-
-Next-door buildings closer than the positional precision are routinely matched; treat
-rows as leads.

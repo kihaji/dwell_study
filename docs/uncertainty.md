@@ -1,6 +1,6 @@
 # Positional uncertainty model
 
-Every event's reported error, whatever form it arrives in, is converted into a 2×2 covariance matrix, in m², in a local east/north frame. All uncertainty-aware code then works with covariances: gating, fusion, centroid ellipses, place merging and colocation. This document covers `src/dwells/uncertainty.py`, the related helpers, and how the three dataset shapes are derived from one master event table (`src/dwells/io.py`).
+Every event's reported error, whatever form it arrives in, is converted into a 2×2 covariance matrix, in m², in a local east/north frame. All uncertainty-aware code then works with covariances: gating, fusion, centroid ellipses and place merging. This document covers `src/dwells/uncertainty.py`, the related helpers, and how the three dataset shapes are derived from one master event table (`src/dwells/io.py`).
 
 ---
 
@@ -55,7 +55,7 @@ These values were verified with `uncertainty.k_factor` and `scipy.stats.chi2.ppf
 | 0.95 | 2.4477 | 5.9915 |
 | 0.99 | 3.0349 | 9.2103 |
 
-The χ² column is the Mahalanobis-gate threshold used by the detectors and downstream methods. For example, `ua_mahalanobis` uses `gate_p = 0.99` → 9.21, `downstream.colocation` uses 5.991 (95%), and `downstream.places` Mahalanobis uses 9.21. The p = 0.3935 row is `ONE_SIGMA_P` (`algorithms/common.py:14`, `downstream/places.py:37`). Passing it to `cov_to_ellipse` or `ellipse_to_cov` makes the axes exactly 1-sigma. That is how dwell centroid ellipses (`sigma_major`, `sigma_minor`) are reported and read back.
+The χ² column is the Mahalanobis-gate threshold used by the detectors and downstream methods. For example, `ua_mahalanobis` uses `gate_p = 0.99` → 9.21, `downstream.places` Mahalanobis uses 9.21. The p = 0.3935 row is `ONE_SIGMA_P` (`algorithms/common.py:14`, `downstream/places.py:37`). Passing it to `cov_to_ellipse` or `ellipse_to_cov` makes the axes exactly 1-sigma. That is how dwell centroid ellipses (`sigma_major`, `sigma_minor`) are reported and read back.
 
 ---
 

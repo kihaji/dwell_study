@@ -13,7 +13,7 @@ BASEMAP = TileLayer(id="basemap", data="https://tile.openstreetmap.org/{z}/{x}/{
 
 
 def build(t: dict[str, pl.DataFrame], extent: list[str], sel_place: int | None, sel_visit: int | None,
-          day_range: tuple | None = None, show_coloc: bool = False) -> list:
+          day_range: tuple | None = None) -> list:
     places, visits, ev = t["places"], t["visits"], t["events"]
     if day_range:
         lo, hi = day_range
@@ -82,12 +82,4 @@ def build(t: dict[str, pl.DataFrame], extent: list[str], sel_place: int | None, 
         layers.append(TextLayer(id="arc-labels", data=[{"p": a["t"], "label": a["label"]} for a in arcs],
                                 get_position="@@=p", get_text="@@=label", get_size=12, get_color=[180, 0, 0, 255],
                                 get_pixel_offset=[0, 16]))
-    if show_coloc and sel_place is not None and t["colocations"].height:
-        sel_vis = set(visits.filter(pl.col("place_id") == sel_place)["visit_id"].to_list())
-        c = t["colocations"].filter(pl.col("visit_id_a").is_in(sel_vis) | pl.col("visit_id_b").is_in(sel_vis))
-        if c.height:
-            ctr = places.filter(pl.col("place_id") == sel_place).row(0, named=True)
-            layers.append(ScatterplotLayer(id="coloc", data=[{"p": [ctr["lon"], ctr["lat"]], "n": c.height}],
-                                           get_position="@@=p", get_radius=28, radius_units="pixels", filled=False,
-                                           stroked=True, get_line_color=[0, 0, 0, 200], line_width_min_pixels=3))
     return layers

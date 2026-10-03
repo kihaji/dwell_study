@@ -50,8 +50,6 @@ HELP = {
                  "rarely visited place.",
     "data_quality": "How much and how good the input data is for this identifier. Low reporting rates, large "
                     "errors or many implausible jumps reduce the reliability of everything else.",
-    "colocation": "Other identifiers seen at the selected place at the same time (or at other times). "
-                  "Experimental: next-door buildings cannot be told apart, treat as leads only.",
     "tuning": "Re-run detection for this identifier with different settings to see how sensitive the "
               "results are. Does not change the saved results.",
     "utc": "All times and hour/day breakdowns are in UTC.",

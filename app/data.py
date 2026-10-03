@@ -61,9 +61,7 @@ def tables(dataset: str, uid: str, live: str | None = None) -> dict[str, pl.Data
     src = src or load(dataset)
     out = {}
     for k, v in src.items():
-        if k == "colocations":
-            out[k] = v.filter((pl.col("id_a") == uid) | (pl.col("id_b") == uid))
-        elif "id" in v.columns:
+        if "id" in v.columns:
             out[k] = v.filter(pl.col("id") == uid)
         else:
             out[k] = v

@@ -1,4 +1,4 @@
-"""Scoring detected dwells / colocations against ground truth.
+"""Scoring detected dwells against ground truth.
 
 Dwell matching: within each id, predicted and true dwells are paired by temporal
 IoU (intersection-over-union of [start, end)); pairs with IoU >= iou_min are
