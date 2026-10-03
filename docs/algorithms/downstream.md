@@ -43,33 +43,12 @@ The detectors in this directory produce a DWELLS table (`id, dwell_id, start_ts,
 
 `radius_m` is the place scale that every method uses (`downstream_eval` passes gps 150 m, adtech 250 m, cdr 1000 m, `downstream_eval.py:39`).
 
-### 1.1 `dbscan` (`places.py:84-85`)
-`DBSCAN(eps=radius_m, min_samples=1)` on ENU centroids. With `min_samples=1` every point is a core point, so the clusters are the connected components of the graph "centroid distance <= eps". This is **single-linkage clustering cut at eps**, and it chains: a line of dwells spaced < eps apart becomes one place of unbounded extent.
+> **Focus branch:** only the Mahalanobis merge (below) is kept. DBSCAN, HDBSCAN, GMM and
+> H3 grouping were removed from this branch, together with the scikit-learn dependency,
+> after the held-out comparison in [../tuning.md](../tuning.md) ("Places"). Their
+> descriptions remain in this file on `main`.
 
-Origin: new_ellipses `cotravel_cointegration/place_follower.py` (branch `cotravel-research`, line 151: `DBSCAN(eps = cfg.place_eps_m, min_samples = 1)`, `place_eps_m = 150.0` at line 32). **Deviation:** the original clusters *all identifiers' dwell centroids together* ("shared place ids", docstring line 5), so an arrival event is keyed to a place that is shared across ids. Here DBSCAN runs per id, and place ids are per-id. The default eps (150 m) matches.
-
-### 1.2 `hdbscan` (`places.py:86-92`)
-1. `HDBSCAN(min_cluster_size=2, allow_single_cluster=True)` on the centroids. The default excess-of-mass selection is used, `min_samples` defaults to `min_cluster_size`.
-2. Each noise dwell becomes its own singleton label (`:88-89`).
-3. The label means (cx, cy) are merged with `DBSCAN(eps=radius_m, min_samples=1)` (`:90-92`). HDBSCAN density is relative and has no absolute scale: in testing it split one home by its 20 m jitter. `cluster_selection_epsilon` would do the same job, but it crashes under numpy 2.5 (docstring `:6-9`).
-
-The result is HDBSCAN, then single-linkage at radius_m over cluster centers. So it inherits DBSCAN's chaining at the cluster-center level.
-
-### 1.3 `gmm` (`places.py:93-101`)
-For k = 1..min(n, 15), the code fits `GaussianMixture(k, covariance_type="spherical", reg_covar=(radius_m/2)^2, random_state=0)`. It keeps the model with the lowest BIC and returns `predict(X)` (hard MAP assignment).
-
-- BIC = -2 ln L + p ln n. For spherical 2-D components, p = k·2 (means) + k (variances) + (k-1) (weights) (Schwarz 1978).
-- `reg_covar` is added to every component variance, so each variance is at least (radius_m/2)^2. That is the per-axis variance of a uniform disk of radius radius_m, which gives an absolute floor on place size. Without the floor, a component could collapse onto a few identical centroids.
-- Cost: up to 15 EM fits per id. It is deterministic because of `random_state=0`. With n small (< ~5), BIC tends to pick k=1 or k=n.
-
-### 1.4 `h3` (`places.py:102-115`)
-1. The resolution is `r = resolution_for(radius_m)`: the finest H3 resolution whose *average* edge is >= radius_m (`algorithms/h3_occupancy.py`). Examples: 150 m gives res 9 (edge 200.8 m), 250 m gives res 8 (531 m), 1000 m gives res 7 (1406 m).
-2. Each dwell centroid is mapped to its cell. The code builds the graph whose vertices are the occupied cells and whose edges link occupied cells in each other's k=1 disk (`:112`). `grid_disk` includes the cell itself, so the edge list is never empty.
-3. `scipy.sparse.csgraph.connected_components` runs on that graph. A place is a connected set of occupied, mutually adjacent cells (`:114-115`).
-
-Using one cell per place split stays that straddle a boundary (docstring `:12-14`), hence the connected components. Like DBSCAN, this chains: a corridor of occupied cells becomes one place.
-
-### 1.5 `mahalanobis` (new, `places.py:40-76`, `:116-117`)
+### 1.1 `mahalanobis` (new, `places.py:40-76`, `:116-117`)
 Model: dwell i's reported centroid is z_i ~ N(mu_place, C_i), with
 
     C_i = Sigma_i(1-sigma centroid ellipse) + v I,     v = (radius_m / 2)^2          (_dwell_cov, :40-49)
@@ -233,10 +212,7 @@ Only `mahalanobis`, and only through the dwell centroid ellipses from uncertaint
 
 | Function | Cost | Spark expression |
 |---|---|---|
-| `places.assign` dbscan / h3 | O(n log n) per id (n = dwells/id, small) | `groupBy("id").applyInPandas(...)`. H3 can also be done in SQL (h3 UDF + a connected-components pass per id) |
-| hdbscan | O(n log n) to O(n^2) per id | `applyInPandas` |
-| gmm | 15 EM fits per id | `applyInPandas`. The cost is dominated by the fits, which is fine because n is small |
-| mahalanobis | O(n · places) per id, sequential | `applyInPandas` (order-dependent, not SQL) |
+| `places.assign` (mahalanobis) | O(n · places) per id, sequential | `applyInPandas` (order-dependent, not SQL) |
 | `place_table`, `place_profiles`, `label_home_work` | linear | pure SQL: `sequence(date_trunc('hour', s), e, interval 1 hour)` + `explode`, group-bys, `row_number()` over (id order by night_s desc) |
 | `transitions.*` | linear | SQL window functions `lead(place_id) over (partition by id order by start_ts)` |
 | `nextloc.fit` | linear | group-by counts on (id, prev, cur[, bucket]). `rank` needs a per-id top-k (`row_number`) with backoff via `coalesce` of joins |

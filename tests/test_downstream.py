@@ -49,7 +49,7 @@ def test_places_uncertainty_merge_uses_sigma():
 
 
 def test_patterns_home_work():
-    d, _ = places.assign(dw(WEEK), method="dbscan", radius_m=150)
+    d, _ = places.assign(dw(WEEK), method="mahalanobis", radius_m=150)
     prof = patterns.place_profiles(d, utc_offset_h=-6)
     labels = patterns.label_home_work(prof)
     home = labels.filter(pl.col("label") == "home")
@@ -61,7 +61,7 @@ def test_patterns_home_work():
 
 
 def test_transitions_and_matrix():
-    d, _ = places.assign(dw(WEEK), method="dbscan", radius_m=150)
+    d, _ = places.assign(dw(WEEK), method="mahalanobis", radius_m=150)
     tr = transitions.from_dwells(d)
     assert set(tr.columns) >= set(schema.TRANSITIONS)
     m = transitions.matrix(tr)

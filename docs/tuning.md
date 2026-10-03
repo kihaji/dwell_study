@@ -119,7 +119,8 @@ index against the true places (1 = perfect):
 | adtech | 0.968 | 0.969 | 0.959 |
 
 It is chosen because it adapts to each visit's precision. That matters most for coarse
-sources.
+sources. The other grouping methods were then removed from this branch, along with the
+scikit-learn dependency; they remain on `main`.
 
 ## Robustness
 
