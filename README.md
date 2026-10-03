@@ -7,7 +7,8 @@ its pattern-of-life outputs into the application. It contains:
 * place grouping and the pattern-of-life output tables (`src/dwells/downstream/places.py`,
   `src/dwells/pol/`);
 * the input / output schemas and the uncertainty model (`schema.py`, `uncertainty.py`);
-* an analyst app (Plotly Dash + deckgl-dash) in `app/`;
+* an analyst app (Plotly Dash + deckgl-dash) in `app/`, and the same views as a marimo
+  notebook (deckgl-marimo) in `notebooks/viewer.py`, sharing data, rows and figures;
 * a PySpark runner producing the same output tables, with a Docker test cluster, in
   `spark/` (see `spark/README.md`).
 
@@ -23,6 +24,7 @@ uv run pytest
 # pattern-of-life outputs for the existing repo datasets (data/, git-ignored), then the app
 uv run python -m dwells.pol.build --datasets "eval_*,dev_*,staga"
 uv run --extra app python app/app.py        # http://127.0.0.1:8050
+uv run --extra notebook marimo run notebooks/viewer.py   # or: marimo edit
 ```
 
 Docs:

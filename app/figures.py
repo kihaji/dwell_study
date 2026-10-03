@@ -89,9 +89,9 @@ def timeline(t, day_range=None) -> go.Figure:
     df = pl.DataFrame(rows, schema=["day", "h0", "len", "place_id", "visit_id"], orient="row")
     if day_range:
         df = df.filter(pl.col("day").is_between(*day_range))
+    ranks = {r["place_id"]: r["rank_duration"] for r in t["places"].iter_rows(named=True)}
     f = go.Figure()
-    for pid, g in df.group_by("place_id"):
-        pid = pid[0]
+    for (pid,), g in sorted(df.group_by("place_id"), key=lambda kg: ranks.get(kg[0][0], len(ranks) + 1)):  # legend P1, P2, ...
         f.add_trace(go.Bar(x=g["len"], base=g["h0"], y=g["day"].cast(pl.String), orientation="h",
                            marker_color=colors.get(pid, OTHER), name=labels.get(pid, str(pid)),
                            customdata=g.select("place_id", "visit_id").to_numpy(),
@@ -125,6 +125,60 @@ def presence_calendar(t, day_range=None) -> go.Figure:
                              text=txt, hovertemplate="%{y} %{x}:00 UTC<br>%{text}<extra></extra>"))
     f.update_layout(**LAYOUT, title="Presence calendar (dominant place per hour, UTC)", yaxis=dict(autorange="reversed"),
                     height=max(300, 14 * len(days) + 120))
+    return f
+
+
+def _spring_layout(n: int, edges: list[tuple[int, int]], iters: int = 200) -> np.ndarray:
+    """Deterministic force-directed (Fruchterman-Reingold) node positions in [-1, 1]."""
+    rng = np.random.default_rng(0)
+    pos = rng.uniform(-1, 1, (n, 2))
+    k = 1 / np.sqrt(max(n, 1))
+    for i in range(iters):
+        d = pos[:, None, :] - pos[None, :, :]
+        dist = np.maximum(np.linalg.norm(d, axis=2), 1e-3)
+        disp = (d / dist[..., None] * (k * k / dist)[..., None]).sum(axis=1)  # repulsion
+        for a, b in edges:  # attraction along edges
+            v = pos[a] - pos[b]
+            f = v * np.linalg.norm(v) / k
+            disp[a] -= f
+            disp[b] += f
+        step = 0.1 * (1 - i / iters)
+        pos += disp / np.maximum(np.linalg.norm(disp, axis=1), 1e-9)[:, None] * np.minimum(
+            np.linalg.norm(disp, axis=1), step)[:, None]
+    pos -= pos.mean(axis=0)
+    return pos / max(np.abs(pos).max(), 1e-9)
+
+
+def movement_graph(t, sel_place, top: int = 15) -> go.Figure:
+    """Directed place graph (the Dash app draws the same with cytoscape): top places by time
+    plus the selection; arrow width = transition probability. Node customdata = [place_id]."""
+    p, tr = t["places"], t["transitions"]
+    keep = set(p.filter(pl.col("rank_duration") <= top)["place_id"].to_list()) | ({sel_place} if sel_place is not None else set())
+    nodes = p.filter(pl.col("place_id").is_in(list(keep))).sort("rank_duration")
+    if nodes.height == 0:
+        return _empty("No places")
+    idx = {pid: i for i, pid in enumerate(nodes["place_id"].to_list())}
+    edges = tr.filter(pl.col("from_place").is_in(list(keep)) & pl.col("to_place").is_in(list(keep)))
+    pos = _spring_layout(len(idx), [(idx[a], idx[b]) for a, b in edges.select("from_place", "to_place").iter_rows()])
+    colors = place_colors(p)
+    f = go.Figure()
+    for r in edges.iter_rows(named=True):
+        (x0, y0), (x1, y1) = pos[idx[r["from_place"]]], pos[idx[r["to_place"]]]
+        f.add_annotation(x=x1, y=y1, ax=x0, ay=y0, xref="x", yref="y", axref="x", ayref="y", showarrow=True,
+                         arrowhead=2, arrowwidth=1 + 6 * r["prob"], arrowcolor="#999", standoff=12, startstandoff=12)
+        if r["n"] >= 2:
+            f.add_annotation(x=(x0 + x1) / 2, y=(y0 + y1) / 2, text=f"{r['prob']:.0%}", showarrow=False,
+                             font=dict(size=8, color="#555"))
+    rows = list(nodes.iter_rows(named=True))
+    f.add_trace(go.Scatter(
+        x=pos[:, 0], y=pos[:, 1], mode="markers+text", name="places", text=[place_label(r) for r in rows],
+        textposition="bottom center", textfont=dict(size=9), customdata=[[r["place_id"]] for r in rows],
+        marker=dict(size=[(18 + 50 * r["time_share"] ** 0.5) / 1.5 for r in rows],
+                    color=[colors[r["place_id"]] for r in rows],
+                    line=dict(width=[4 if r["place_id"] == sel_place else 0 for r in rows], color="black")),
+        hovertemplate="%{text}<extra></extra>"))
+    f.update_layout(**LAYOUT, title="Movement graph (click a place)", showlegend=False, clickmode="event+select",
+                    xaxis=dict(visible=False), yaxis=dict(visible=False), height=380)
     return f
 
 

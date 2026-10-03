@@ -5,6 +5,9 @@
 
 Select a dataset and identifier; click a place on the map, in the rankings, the graph,
 the places table or the timeline to focus every view on it. Times are UTC.
+
+Framework-independent logic is shared with the marimo notebook (notebooks/viewer.py):
+data.py, views.py (rows, selection), map_data.py (layer rows) and figures.py.
 """
 
 from __future__ import annotations
@@ -21,6 +24,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 import data  # noqa: E402
 import figures  # noqa: E402
 import layers  # noqa: E402
+import map_data  # noqa: E402
+import views  # noqa: E402
+from views import RANK_COLS  # noqa: E402
 
 from dwells.pol.help import HELP  # noqa: E402
 from dwells.presets import params_for  # noqa: E402
@@ -29,8 +35,6 @@ DS = data.datasets()
 CARD = {"border": "1px solid #ddd", "borderRadius": "6px", "padding": "8px", "background": "white"}
 TABLE_STYLE = dict(style_table={"overflowX": "auto"}, style_cell={"fontSize": 12, "padding": "3px", "textAlign": "left"},
                    style_header={"fontWeight": "bold", "background": "#f5f5f5"}, page_size=10)
-RANK_COLS = {"total time": "rank_duration", "pattern confidence": "rank_score", "repeat visits": "rank_visits",
-             "distinct days": None}
 
 
 def info(key: str):
@@ -43,17 +47,6 @@ def title(text: str, key: str):
 
 def card(*children, style=None):
     return html.Div(children, style=CARD | (style or {}))
-
-
-def fmt_dur(s):
-    if s is None:
-        return ""
-    h, m = divmod(int(s) // 60, 60)
-    return f"{h}h{m:02d}" if h else f"{m}m"
-
-
-def fmt_ts(t):
-    return t.strftime("%Y-%m-%d %H:%M") if t is not None else ""
 
 
 app = Dash(__name__, title="Pattern of life")
@@ -194,12 +187,9 @@ def _select(uid, live, click, rank_cell, place_cell, node, visit_cell, tl_click,
             rank_rows, place_rows, visit_rows, anom_rows, ds, sel):
     trig = ctx.triggered_id
     if trig in ("uid", "live", None):
-        p = data.tables(ds, uid, live)["places"]
-        return {"place_id": int(p.sort("rank_duration")["place_id"][0]) if p.height else None, "visit_id": None}
-    if trig == "map" and click and click.get("object"):
-        o = click["object"]
-        if o.get("place_id") is not None:
-            return {"place_id": int(o["place_id"]), "visit_id": o.get("visit_id")}
+        return views.default_selection(data.tables(ds, uid, live))
+    if trig == "map" and click and views.selection_from_pick(click.get("object")):
+        return views.selection_from_pick(click["object"])
     if trig == "rank-table" and rank_cell:
         return {"place_id": rank_rows[rank_cell["row"]]["place_id"], "visit_id": None}
     if trig == "places-table" and place_cell:
@@ -224,12 +214,7 @@ def _select(uid, live, click, rank_cell, place_cell, node, visit_cell, tl_click,
 @app.callback(Output("rank-table", "data"), Output("rank-table", "columns"), Input("ds", "value"), Input("uid", "value"),
               Input("live", "data"), Input("rank-by", "value"))
 def _rankings(ds, uid, live, by):
-    p = data.tables(ds, uid, live)["places"]
-    col = RANK_COLS[by]
-    p = p.sort(col) if col else p.sort(["n_days", "total_dwell_s"], descending=True)
-    rows = [{"#": i + 1, "place": data.place_label(r), "total time": fmt_dur(r["total_dwell_s"]),
-             "visits": r["n_visits"], "days": r["n_days"], "confidence": round(r["score"]), "place_id": r["place_id"]}
-            for i, r in enumerate(p.head(10).iter_rows(named=True))]
+    rows = views.rank_rows(data.tables(ds, uid, live), by)
     return rows, [{"name": c, "id": c} for c in ("#", "place", "total time", "visits", "days", "confidence")]
 
 
@@ -253,15 +238,7 @@ def _graph(ds, uid, live, sel):
 @app.callback(Output("places-table", "data"), Output("places-table", "columns"), Input("ds", "value"), Input("uid", "value"),
               Input("live", "data"))
 def _places_table(ds, uid, live):
-    p = data.tables(ds, uid, live)["places"].sort("rank_duration")
-    rows = [{"place": data.place_label(r), "label": r["label"] or "", "address": r["address"] or "",
-             "visits": r["n_visits"], "days": r["n_days"], "total time": fmt_dur(r["total_dwell_s"]),
-             "median visit": fmt_dur(r["median_dwell_s"]), "time share %": round(100 * r["time_share"], 1),
-             "reports": r["n_events"], "confidence": round(r["score"]), "evidence": round(r["score_evidence"], 2),
-             "precision": round(r["score_precision"], 2), "regularity": round(r["score_regularity"], 2),
-             "center ±m (1σ)": round(r["sigma_major"], 1), "extent m": round(r["extent_m"] or 0, 1),
-             "first seen": fmt_ts(r["first_seen"]), "last seen": fmt_ts(r["last_seen"]), "place_id": r["place_id"]}
-            for r in p.iter_rows(named=True)]
+    rows = views.places_rows(data.tables(ds, uid, live))
     cols = [c for c in rows[0] if c != "place_id"] if rows else []
     return rows, [{"name": c, "id": c} for c in cols]
 
@@ -278,13 +255,7 @@ def _id_figs(ds, uid, live, d0, d1):
 @app.callback(Output("anom-table", "data"), Output("anom-table", "columns"), Input("ds", "value"), Input("uid", "value"),
               Input("live", "data"), Input("sev", "value"))
 def _anomalies(ds, uid, live, sev):
-    t = data.tables(ds, uid, live)
-    a = t["anomalies"].filter(pl.col("severity") >= sev).join(
-        t["visits"].select("visit_id", "start_ts", "duration_s"), on="visit_id").sort("severity", descending=True)
-    labels = {r["place_id"]: data.place_label(r) for r in t["places"].iter_rows(named=True)}
-    rows = [{"when": fmt_ts(r["start_ts"]), "place": labels.get(r["place_id"], ""), "kind": r["kind"].replace("_", " "),
-             "detail": r["detail"], "severity": round(r["severity"], 2), "place_id": r["place_id"], "visit_id": r["visit_id"]}
-            for r in a.iter_rows(named=True)]
+    rows = views.anomaly_rows(data.tables(ds, uid, live), sev)
     return rows, [{"name": c, "id": c} for c in ("when", "place", "kind", "detail", "severity")]
 
 
@@ -292,19 +263,7 @@ def _anomalies(ds, uid, live, sev):
               Input("ds", "value"), Input("uid", "value"), Input("live", "data"))
 def _quality(ds, uid, live):
     t = data.tables(ds, uid, live)
-    q = t["quality"].row(0, named=True) if t["quality"].height else {}
-    items = [("reports", f"{q.get('n_events', 0):,}"), ("active days", q.get("active_days")),
-             ("reports / active day", f"{q.get('events_per_active_day', 0):.0f}"),
-             ("hours with data", f"{100 * (q.get('hour_coverage') or 0):.0f}%"),
-             ("typical gap", fmt_dur(q.get("gap_p50_s"))), ("95th pct gap", fmt_dur(q.get("gap_p95_s"))),
-             ("typical accuracy", f"{q.get('sigma_p50_m', 0):.0f} m"), ("coarse reports", f"{100 * q.get('coarse_frac', 0):.0f}%"),
-             ("duplicates", f"{100 * q.get('duplicate_frac', 0):.1f}%"), ("repeated positions", f"{100 * q.get('stale_frac', 0):.1f}%"),
-             ("implausible jumps", f"{100 * q.get('speed_outlier_frac', 0):.1f}%"),
-             ("reports in visits", f"{100 * q.get('events_in_visits_frac', 0):.0f}%"),
-             ("source labelled", "n/a" if q.get("source_coverage") is None else f"{100 * q['source_coverage']:.0f}%"),
-             ("label vs accuracy conflicts", "n/a" if q.get("source_mismatch_frac") is None
-              else f"{100 * q['source_mismatch_frac']:.1f}%")]
-    stats = html.Div([html.Div([html.B(f"{k}: "), str(v)]) for k, v in items],
+    stats = html.Div([html.Div([html.B(f"{k}: "), v]) for k, v in views.quality_items(t)],
                      style={"display": "grid", "gridTemplateColumns": "repeat(3, 1fr)", "fontSize": 12})
     f1, f2 = figures.quality_figs(t, t["events"])
     return stats, f1, f2
@@ -317,11 +276,7 @@ def _quality(ds, uid, live):
 def _map(ds, uid, live, sel, extent, d0, d1):
     t = data.tables(ds, uid, live)
     lay = layers.build(t, extent or [], sel["place_id"], sel["visit_id"], _range(d0, d1))
-    p = t["places"]
-    focus = p.filter(pl.col("place_id") == sel["place_id"]) if sel["place_id"] is not None else p
-    view = {"longitude": float(focus["lon"].mean()), "latitude": float(focus["lat"].mean()), "zoom": 14} if focus.height else \
-        {"longitude": -83.63, "latitude": 32.84, "zoom": 12}
-    return DeckGL(id="map", layers=lay, initial_view_state=view, controller=True, tooltip=True,
+    return DeckGL(id="map", layers=lay, initial_view_state=map_data.view(t, sel["place_id"]), controller=True, tooltip=True,
                   enable_events=["click"], style={"width": "100%", "height": "560px"})
 
 
@@ -333,40 +288,25 @@ def _map(ds, uid, live, sel, extent, d0, d1):
 def _selection_views(ds, uid, live, sel, vall):
     t = data.tables(ds, uid, live)
     pid, vid = sel["place_id"], sel["visit_id"]
-    p = t["places"].filter(pl.col("place_id").eq_missing(pid))  # pid may be None (no selection)
-    labels = {r["place_id"]: data.place_label(r) for r in t["places"].iter_rows(named=True)}
-    if p.height:
-        r = p.row(0, named=True)
+    s = views.place_summary(t, pid)
+    if s:
+        ev_, pr_, rg_ = s["components"]
         place_card = html.Div([
-            html.Div(html.B(data.place_label(r))),
-            html.Div(r["address"] or "no address found nearby", style={"color": "#555"}),
-            html.Div(f"{r['place_category'] or ''}  (matched {r['geocode_distance_m']:.0f} m away)" if r["geocode_distance_m"] else ""),
-            html.Div([html.B(f"Pattern confidence {r['score']:.0f}/100"), info("score")]),
-            html.Div([f"evidence {r['score_evidence']:.2f}", info("score_evidence"), " · ",
-                      f"precision {r['score_precision']:.2f}", info("score_precision"), " · ",
-                      f"regularity {r['score_regularity']:.2f}", info("score_regularity")]),
-            html.Div(f"{r['n_visits']} visits on {r['n_days']} days · {fmt_dur(r['total_dwell_s'])} total · "
-                     f"median visit {fmt_dur(r['median_dwell_s'])} · {100 * r['time_share']:.0f}% of dwell time"),
-            html.Div(f"center ±{r['sigma_major']:.0f} m (1σ) · activity extent {r['extent_m'] or 0:.0f} m · "
-                     f"first {fmt_ts(r['first_seen'])} · last {fmt_ts(r['last_seen'])}"),
+            html.Div(html.B(s["title"])),
+            html.Div(s["address"], style={"color": "#555"}),
+            html.Div(s["match"]),
+            html.Div([html.B(s["score"]), info("score")]),
+            html.Div([ev_, info("score_evidence"), " · ", pr_, info("score_precision"), " · ", rg_,
+                      info("score_regularity")]),
+            html.Div(s["stats"]),
+            html.Div(s["extent"]),
         ], style={"fontSize": 12, "lineHeight": "1.6"})
     else:
         place_card = "Select a place"
-    v = t["visits"] if "all" in (vall or []) else t["visits"].filter(pl.col("place_id").eq_missing(pid))
-    vrows = [{"start": fmt_ts(r["start_ts"]), "end": fmt_ts(r["end_ts"]), "duration": fmt_dur(r["duration_s"]),
-              "arrived between": f"{fmt_ts(r['arrive_after'])} – {fmt_ts(r['arrive_by'])}",
-              "left between": f"{fmt_ts(r['depart_after'])} – {fmt_ts(r['depart_by'])}",
-              "reports": r["n_events"], "precise": r["n_informative"], "confidence": round(r["confidence"]),
-              "center ±m": round(r["sigma_major"] or 0, 1), "from": labels.get(r["prev_place_id"], ""),
-              "to": labels.get(r["next_place_id"], ""), "flags": ", ".join(r["anomalies"] or []),
-              "place": labels.get(r["place_id"], ""), "place_id": r["place_id"], "visit_id": r["visit_id"]}
-             for r in v.sort("start_ts", descending=True).iter_rows(named=True)]
+    vrows = views.visits_rows(t, pid, all_places="all" in (vall or []))
     vcols = [{"name": c, "id": c} for c in ("start", "end", "duration", "arrived between", "left between", "reports",
                                             "precise", "confidence", "center ±m", "from", "to", "flags", "place")]
-    nx = t["next_places"].filter(pl.col("from_place").eq_missing(pid))
-    nrows = [{"rank": r["rank"], "next place": labels.get(r["to_place"], str(r["to_place"])),
-              "probability": f"{r['prob']:.0%}", "at least": f"{r['prob_low']:.0%}", "departures seen": r["n_from"]}
-             for r in nx.iter_rows(named=True)]
+    nrows = views.next_rows(t, pid)
     ncols = [{"name": c, "id": c} for c in ("rank", "next place", "probability", "at least", "departures seen")]
     return (place_card, figures.radar(t, pid, vid), figures.weekday_hour_heatmap(t, pid), vrows, vcols, nrows, ncols)
 

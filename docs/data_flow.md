@@ -238,6 +238,13 @@ result can always be traced to the exact run that produced it.
 
 ## 6. UI reads (`app/data.py`)
 
+Two viewers read the results: the Dash app (`app/app.py`) and the marimo notebook
+(`notebooks/viewer.py`). Both are thin layers over shared, framework-independent modules:
+`app/data.py` (loading, live re-runs, labels and colors), `app/views.py` (table rows,
+place summary, quality stats, selection), `app/map_data.py` (map layer rows, view
+and bounds) and `app/figures.py` (Plotly figures). Port those, then bind them to the
+target UI.
+
 * `pipeline.read(out_dir) -> dict[str, DataFrame]` reads every `*.parquet` in the
   directory, keyed by file stem: a single file (`pipeline.write`) or a directory of part
   files (the Spark runner). The app wraps it in an LRU cache (`data.load`).

@@ -5,6 +5,11 @@ written for analysts, not mathematicians. When a number comes from a formula, th
 says what it means in pattern-of-life terms and gives a plain-language rule of thumb.
 The ⓘ icons in the app show short versions of the same text.
 
+The app comes in two forms with the same views and numbers: a web app (Dash) and a
+notebook (marimo, `notebooks/viewer.py`). They differ only in small ways. In the notebook,
+tables are searched with the search box and filtered from the column header menu, and the
+movement graph is drawn with its own layout; it has the same circles, arrows and labels.
+
 **The question the app answers.** For one identifier (one device): *where does it stay,
 when is it there, where does it go next, and how sure can we be?*
 
