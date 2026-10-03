@@ -15,7 +15,6 @@ is taken, so every dataset shape sees the same defect.
 | clock_jitter  | timestamp noise sd (seconds)               | device clock drift, server-receipt timestamps |
 | thin          | fraction of events kept                    | lower sampling rate, aggressive deduplication |
 | truncate      | decimals kept in lat/lon                   | coordinate rounding (3 dp ~ 110 m, 4 dp ~ 11 m) |
-| ip_confident  | 1-sigma (m) claimed by IP-derived reports  | vendors attaching a small accuracy to IP geolocation |
 """
 
 from __future__ import annotations
@@ -25,8 +24,7 @@ import polars as pl
 
 from dwells import geo
 
-PERTURBATIONS = ("error_scale", "error_noise", "duplicates", "stale", "outliers", "clock_jitter", "thin", "truncate",
-                 "ip_confident")
+PERTURBATIONS = ("error_scale", "error_noise", "duplicates", "stale", "outliers", "clock_jitter", "thin", "truncate")
 
 
 def apply(master: pl.DataFrame, name: str, level: float, seed: int = 0, dist_m: float = 500.0) -> pl.DataFrame:
@@ -57,10 +55,6 @@ def apply(master: pl.DataFrame, name: str, level: float, seed: int = 0, dist_m: 
         m = m.with_columns((pl.col("timestamp").dt.epoch("us") + pl.Series(us)).cast(pl.Datetime("us", "UTC")).alias("timestamp"))
     elif name == "thin":
         m = m.filter(pl.Series(rng.random(n) < level))
-    elif name == "ip_confident":
-        ip = pl.col("source") == "ip"
-        m = m.with_columns(sig_a=pl.when(ip).then(pl.lit(float(level))).otherwise(pl.col("sig_a")),
-                           sig_b=pl.when(ip).then(pl.lit(float(level))).otherwise(pl.col("sig_b")))
     elif name == "truncate":
         m = m.with_columns(pl.col("lat").round(int(level)), pl.col("lon").round(int(level)))
     else:

@@ -37,7 +37,7 @@ def build(dataset: str, shape: str = "3_mixed", profile: str = "auto", min_durat
     t = time.time()
     prof = io.profile_of(dataset) if profile == "auto" else profile
     # repo datasets carry the generator's per-report source -> location_source labels, as an
-    # upload with that optional field would (docs/experiments/location_source.md)
+    # upload with that optional field would (docs/tuning.md, "location_source labels")
     ev = io.load_events(io.dataset_dirs()[dataset], shape, with_source=with_source)
     params = params_for(prof, min_duration_s)
     tables = pipeline.analyze(ev, params=params, geocoder=geocoder_for(dataset))

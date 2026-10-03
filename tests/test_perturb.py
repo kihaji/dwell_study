@@ -56,10 +56,3 @@ def test_thin_and_truncate_and_jitter(master):
 def test_unknown_perturbation(master):
     with pytest.raises(ValueError):
         perturb.apply(master, "nope", 1, seed=0)
-
-
-def test_ip_confident_only_changes_ip_reports(master):
-    m = master.with_columns(source=pl.Series(["ip", "gps"] * 100))
-    out = perturb.apply(m, "ip_confident", 50.0, seed=0)
-    assert out.filter(pl.col("source") == "ip")["sig_a"].unique().to_list() == [50.0]
-    assert out.filter(pl.col("source") == "gps")["sig_a"].unique().to_list() == [10.0]

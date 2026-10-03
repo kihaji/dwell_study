@@ -13,7 +13,7 @@ from __future__ import annotations
 # after 15 min away; fixes vaguer than 1 km (1-sigma) AND 3x vaguer than the id's typical
 # fix never define a dwell (a uniformly coarse source such as CDR is not discarded).
 # Assumed 1-sigma by location_source label, used only for reports without accuracy fields
-# (docs/experiments/location_source.md). ip / user_provided reports are always vague
+# (docs/tuning.md, "location_source labels"). ip / user_provided reports are always vague
 # (ua_mahalanobis coarse_sources default).
 SOURCE_SIGMA = {"gps": 10.0, "network": 300.0, "fused": 30.0}
 BASE = {"radius_m": 75, "max_gap_s": 43200, "gate_p": 0.99, "k_break": 3, "confirm_s": 900,

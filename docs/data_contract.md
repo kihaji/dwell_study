@@ -33,7 +33,7 @@ Optional provenance field (recommended whenever the feed states it):
 |---|---|---|
 | `location_source` | `gps`, `network`, `fused`, `ip`, `user_provided`, `unknown` (null = unknown) | How the fix was produced, using the Android provider terms (`gps`, `network`, `fused`). Adtech feeds following OpenRTB map `geo.type` 1 → `gps`, 2 → `ip`, 3 → `user_provided`. CDR and Wi-Fi/cell positioning → `network`. iOS exposes no provider, so use `fused` or leave it unknown. A cached / last-known fix keeps the label of the original fix. |
 
-What the detector does with it ([experiments/location_source.md](experiments/location_source.md)):
+What the detector does with it (evidence: [tuning.md](tuning.md), "location_source labels"):
 * `ip` and `user_provided` reports are always treated as vague: they never start, end,
   extend or move a dwell, whatever accuracy they claim. In held-out adtech data, IP
   reports claiming a 50–200 m accuracy cost 0.08 F1 without the label and nothing with it.

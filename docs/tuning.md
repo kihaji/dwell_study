@@ -100,7 +100,7 @@ for centerpoint-only data:
 | confirm_s | 900 | ...or this long away before being seen back |
 | coarse_sigma_m / coarse_rel | 1000 / 3 | fixes worse than 1 km (1σ) and 3× the id's typical fix are not used to locate stays; app label **vague-report cutoff** (sets coarse_sigma_m) |
 | default_sigma_m | gps 10, cdr 300, adtech 300, mixed 30 | error assumed when no accuracy fields exist and no usable location_source label |
-| source_sigma | gps 10, network 300, fused 30 | error assumed per location_source label for reports without accuracy fields ([experiments/location_source.md](experiments/location_source.md)); ip / user_provided reports are always vague (`coarse_sources`) |
+| source_sigma | gps 10, network 300, fused 30 | error assumed per location_source label for reports without accuracy fields (see "location_source labels" below); ip / user_provided reports are always vague (`coarse_sources`) |
 
 The base matched or beat the per-source tuned values on held-out data, except adtech by
 0.011 (0.498 vs 0.509), so it is the recommended default. Use `mixed` when the source is
@@ -121,6 +121,36 @@ index against the true places (1 = perfect):
 It is chosen because it adapts to each visit's precision. That matters most for coarse
 sources. The other grouping methods were then removed from this branch, along with the
 scikit-learn dependency; they remain on `main`.
+
+## location_source labels
+
+The optional `location_source` field (`docs/data_contract.md`) was evaluated with the
+generator's true per-report source as labels (gps / network / ip). For reports without
+accuracy fields, `network` reports were assigned an assumed 1σ, chosen on dev
+centerpoint-only data:
+
+| network σ | 50 m | 100 m | 300 m | 600 m |
+|---|---|---|---|---|
+| CDR F1 (dev) | 0.409 | 0.450 | **0.475** | 0.418 |
+| adtech F1 (dev) | 0.355 | 0.359 | 0.366 | 0.375 |
+
+300 m was adopted (`SOURCE_SIGMA` in `presets.py`: gps 10, network 300, fused 30; the
+`fused` value is untested because the generator produces no fused reports).
+
+Held-out F1, centerpoint-only data:
+
+| | GPS | CDR | adtech |
+|---|---|---|---|
+| type unknown (assumed 30 m) | 0.980 | 0.387 | 0.278 |
+| analyst states the type | 0.980 | 0.497 | 0.332 |
+| location_source on every report | 0.980 | 0.497 | **0.400** |
+| location_source on 50% of reports | 0.981 | 0.436 | 0.329 |
+
+With accuracy fields, labels change nothing while accuracies are honest (GPS 0.981,
+CDR 0.622, adtech 0.498 either way). When IP reports claim a small accuracy (1σ = 50 or
+200 m), adtech F1 drops to 0.42 without labels and stays at 0.498 with them, because `ip`
+reports are always treated as vague. The experiment code (label-coverage simulation and
+the IP-overconfidence perturbation) is on branch `exp/ua-location-source`.
 
 ## Robustness
 
