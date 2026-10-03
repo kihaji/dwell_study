@@ -76,7 +76,8 @@ app.layout = html.Div(style={"fontFamily": "sans-serif", "background": "#fafafa"
     ]),
     html.Div(style={"display": "grid", "gridTemplateColumns": "3fr 2fr", "gap": "10px", "marginTop": "8px"}, children=[
         card(title("Map", "map"), html.Div(id="map-wrap", style={"height": "560px", "position": "relative"}),
-             html.Div([info("next_place_arcs"), " arcs show likely next places from the selected place"],
+             html.Div([info("next_place_arcs"), " arcs show likely next places from the selected place · map © ",
+                       html.A("OpenStreetMap contributors", href="https://www.openstreetmap.org/copyright", target="_blank")],
                       style={"fontSize": 11, "color": "#555"})),
         html.Div(style={"display": "flex", "flexDirection": "column", "gap": "10px"}, children=[
             card(title("Selected place", "place"), html.Div(id="place-card")),

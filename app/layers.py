@@ -7,7 +7,8 @@ from deckgl_dash.layers import ArcLayer, LineLayer, PolygonLayer, ScatterplotLay
 
 from data import hex_rgb, place_colors, place_label
 
-BASEMAP = TileLayer(id="basemap", data="https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+# OpenStreetMap standard tiles; their usage policy requires visible attribution (shown under the map)
+BASEMAP = TileLayer(id="basemap", data="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                     min_zoom=0, max_zoom=19, tile_size=256)
 
 
