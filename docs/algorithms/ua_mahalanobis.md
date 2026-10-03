@@ -184,9 +184,9 @@ k-miss outlier tolerance.
 
 - Near-linear: one pass with O(1) state. Each break re-processes up to `k_break - 1`
   events, and rejected stays re-scan their events once to clear labels. numba.
-- Per-id partitionable with no global step. It is a stateful scan, so use
-  `groupBy("id").applyInPandas(detect)` (or `mapGroupsWithState` in Scala). It cannot
-  be expressed as SQL windows.
+- Per-id partitionable with no global step. It is a stateful scan, so use a grouped
+  map (`groupBy("id").applyInArrow`, as the runner in `spark/` does for the whole
+  pipeline, or `mapGroupsWithState` in Scala). It cannot be expressed as SQL windows.
 
 ## Known limitations / failure modes
 

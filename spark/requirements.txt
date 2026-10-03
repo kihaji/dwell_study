@@ -1,0 +1,10 @@
+# Spark image dependencies. Analysis libraries pinned to uv.lock so Spark and the
+# polars-only run compute identically (exact parity).
+pyspark==4.2.0
+pyarrow
+pandas<3  # required by PySpark Arrow UDFs, not used directly (PySpark 4.2 warns on pandas 3)
+numba==0.68.0
+numpy==2.5.3
+polars==1.44.2
+scipy==1.18.1
+pytest==9.1.1

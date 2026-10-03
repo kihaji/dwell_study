@@ -139,10 +139,15 @@ def write(tables: dict[str, pl.DataFrame], out_dir: str | Path, meta: dict | Non
     out.mkdir(parents=True, exist_ok=True)
     for k, v in tables.items():
         v.write_parquet(out / f"{k}.parquet")
-    (out / "meta.json").write_text(json.dumps((meta or {}) | {"written": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
-                                              indent=2, default=str))
+    write_meta(out, meta)
+
+
+def write_meta(out_dir: str | Path, meta: dict | None = None) -> None:
+    (Path(out_dir) / "meta.json").write_text(
+        json.dumps((meta or {}) | {"written": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}, indent=2, default=str))
 
 
 def read(out_dir: str | Path) -> dict[str, pl.DataFrame]:
     out = Path(out_dir)
-    return {p.stem: pl.read_parquet(p) for p in out.glob("*.parquet")}
+    # a table is a parquet file (pipeline.write) or a directory of part files (Spark)
+    return {p.stem: pl.read_parquet(p / "*.parquet" if p.is_dir() else p) for p in out.glob("*.parquet")}

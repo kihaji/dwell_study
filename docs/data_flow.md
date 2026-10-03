@@ -39,7 +39,8 @@ pipeline.write(tables, f"results/{upload_id}",              # 4
                      "rows": {k: v.height for k, v in tables.items()}})
 ```
 
-Everything runs in memory in one process. See "Scaling" below.
+Everything runs in memory in one process. For large uploads, the PySpark runner in
+[`spark/`](../spark/README.md) produces the same output (see "Scaling" below).
 
 ---
 
@@ -238,7 +239,8 @@ result can always be traced to the exact run that produced it.
 ## 6. UI reads (`app/data.py`)
 
 * `pipeline.read(out_dir) -> dict[str, DataFrame]` reads every `*.parquet` in the
-  directory, keyed by file stem. The app wraps it in an LRU cache (`data.load`).
+  directory, keyed by file stem: a single file (`pipeline.write`) or a directory of part
+  files (the Spark runner). The app wraps it in an LRU cache (`data.load`).
 * Most views show one identifier at a time: `data.tables(dataset, id)` filters every
   table to that id.
 * The map layers (`app/layers.py`) use the rings (`ellipse_ring`, `hull_ring`: closed
@@ -259,12 +261,13 @@ to the id.
 ## Scaling and porting notes
 
 * **The work splits by id.** Detection, places, profiles, transitions and quality are
-  all computed per id; nothing crosses ids. A large upload can be partitioned by id
-  (process pool, or Spark `groupBy("id").applyInPandas`), with each partition calling
-  `analyze`.
+  all computed per id; nothing crosses ids. A large upload can be partitioned by id,
+  with each partition calling `analyze`. The PySpark runner in [`spark/`](../spark/README.md)
+  does exactly this (`groupBy("id").applyInArrow`) and writes the same tables, verified
+  equal to a polars run.
 * **Remap ids when partitioning.** `visit_id` and `place_id` start at 0 in each call.
-  When merging partitions, offset them (or make the key `(id, place_id)`) so they stay
-  unique.
+  When merging partitions, offset each id's ids by the visits / places of all ids
+  sorting before it (as `spark/dwells_spark/job.py` does) to get the polars numbering.
 * **Memory:** keep each partition to a few million events. On WSL2, run batch jobs
   under a memory cap (`systemd-run --user --scope -p MemoryMax=12G -p MemorySwapMax=0`).
 * **Startup:** the first call compiles the numba kernel. With `cache=True`, this

@@ -1,0 +1,38 @@
+# Small standalone Spark cluster for testing (memory-capped for WSL2: ~10 GB total).
+#   docker compose -f spark/docker-compose.yml build
+#   docker compose -f spark/docker-compose.yml run --rm driver pytest spark/tests   # local[2]
+#   docker compose -f spark/docker-compose.yml up -d spark-master spark-worker-1 spark-worker-2
+#   docker compose -f spark/docker-compose.yml run --rm -e SPARK_MASTER=spark://spark-master:7077 driver pytest spark/tests
+#   docker compose -f spark/docker-compose.yml down
+x-spark: &spark
+  image: dwells-spark
+  build:
+    context: .
+    args:
+      UID: ${UID:-1000}
+  volumes:
+    - ..:/work
+
+services:
+  spark-master:
+    <<: *spark
+    command: spark-class org.apache.spark.deploy.master.Master --host spark-master --port 7077 --webui-port 8080
+    ports: ["8080:8080"]
+    mem_limit: 1g
+
+  spark-worker-1: &worker
+    <<: *spark
+    command: spark-class org.apache.spark.deploy.worker.Worker --cores 4 --memory 3g spark://spark-master:7077
+    depends_on: [spark-master]
+    mem_limit: 4g
+
+  spark-worker-2:
+    <<: *worker
+
+  driver:
+    <<: *spark
+    command: python -m dwells_spark --help
+    environment:
+      # test files on the shared mount: executors on the workers must read and write them
+      PYTEST_ADDOPTS: --basetemp=/work/spark/.pytest-tmp -p no:cacheprovider
+    mem_limit: 3g

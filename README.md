@@ -7,7 +7,9 @@ its pattern-of-life outputs into the application. It contains:
 * place grouping and the pattern-of-life output tables (`src/dwells/downstream/places.py`,
   `src/dwells/pol/`);
 * the input / output schemas and the uncertainty model (`schema.py`, `uncertainty.py`);
-* an analyst app (Plotly Dash + deckgl-dash) in `app/`.
+* an analyst app (Plotly Dash + deckgl-dash) in `app/`;
+* a PySpark runner producing the same output tables, with a Docker test cluster, in
+  `spark/` (see `spark/README.md`).
 
 Elsewhere:
 * the multi-algorithm comparison lives on `main`;
