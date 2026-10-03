@@ -42,7 +42,8 @@ def wilson_low(k: np.ndarray, n: np.ndarray, z: float = Z95) -> np.ndarray:
 def hour_overlap(visits: pl.DataFrame) -> pl.DataFrame:
     """One row per (visit, clock hour) with the seconds of the visit inside that hour."""
     x = visits.select("id", "visit_id", "place_id", "start_ts", "end_ts")
-    x = x.with_columns(h=pl.datetime_ranges(pl.col("start_ts").dt.truncate("1h"), pl.col("end_ts"), "1h")).explode("h")
+    x = x.with_columns(h=pl.datetime_ranges(pl.col("start_ts").dt.truncate("1h"), pl.col("end_ts"), "1h")).explode(
+        "h", empty_as_null=True)  # ranges are never empty (start <= end); explicit for Polars 2.0
     x = x.with_columns(
         seconds=(pl.min_horizontal(pl.col("end_ts"), pl.col("h") + pl.duration(hours=1))
                  - pl.max_horizontal(pl.col("start_ts"), pl.col("h"))).dt.total_seconds().clip(0).cast(pl.Float64),
