@@ -1,10 +1,11 @@
-"""Behavioral contract every dwell detector must satisfy on clean, easy tracks."""
+"""Behavioral contract the dwell detector must satisfy on clean, easy tracks."""
 
 import numpy as np
 import polars as pl
 import pytest
 
-from dwells import algorithms, schema
+from dwells import schema
+from dwells.algorithms import ua_mahalanobis as ua
 from dwells.geo import from_enu
 
 LAT0, LON0 = 40.0, -75.0
@@ -57,17 +58,9 @@ def _spans(d):
     return list(zip(d["start_ts"].dt.epoch("us").to_numpy() / 1e6, d["end_ts"].dt.epoch("us").to_numpy() / 1e6))
 
 
-# Faithful ports / native library semantics that knowingly violate a contract test.
-# Documented in docs/algorithms/<name>.md; kept visible as xfail rather than hidden.
-KNOWN_LIMITATIONS: dict = {}
-
-
-@pytest.fixture(params=algorithms.names())
-def algo(request):
-    reason = KNOWN_LIMITATIONS.get((request.param, request.node.originalname))
-    if reason:
-        request.applymarker(pytest.mark.xfail(reason=reason, strict=True))
-    return algorithms.get(request.param)
+@pytest.fixture
+def algo():
+    return ua
 
 
 def test_detects_easy_dwells(algo):

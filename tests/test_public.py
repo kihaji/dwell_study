@@ -1,17 +1,13 @@
-import zipfile
 from datetime import UTC, datetime
 
 import numpy as np
 import polars as pl
 
-from dwells import geo, io
+from dwells import io
 from dwells.public import (
     cluster_places,
-    foursquare,
-    geolife,
     label_stops,
     nominal_error,
-    pol,
     staga,
     write_dataset,
 )
@@ -81,69 +77,6 @@ def test_staga_parse_and_truth():
     assert dw["lat"][3] is None
     assert {"id", "dwell_id", "place_id", "category", "start_ts", "end_ts", "duration_s",
             "lat", "lon", "radius_m", "n_events"} <= set(dw.columns)
-
-
-def test_pol_localizes_and_labels():
-    # PoL times are naive local clock times
-    tr = pl.DataFrame({"tick": [0, 1, 2, 3], "agent_id": [5, 5, 5, 5],
-                       "time": [datetime(2024, 1, 1, 0, m) for m in range(4)],  # noqa: DTZ001
-                       "latitude": [33.7] * 4, "longitude": [-84.4] * 4})
-    gt = pl.DataFrame({"tick": [0], "agent_id": [5], "startTime": [datetime(2024, 1, 1, 0, 0)],  # noqa: DTZ001
-                       "endTime": [datetime(2024, 1, 1, 0, 2)],  # noqa: DTZ001
-                       "latitude": [33.7], "longitude": [-84.4],
-                       "loc_id_per_user": [3], "num_visits": [1]})
-    ev, dw = pol.to_dataset(tr, gt)
-    assert ev["id"].to_list() == ["5"] * 4
-    assert ev["timestamp"][0] == _ts(2024, 1, 1, 5, 0)  # EST -> UTC
-    assert ev["truth_dwell_id"].to_list() == [0, 0, 0, None]
-    assert dw["place_id"].to_list() == [3] and dw["n_events"].to_list() == [3]
-    assert dw["start_ts"][0] == _ts(2024, 1, 1, 5, 0) and dw["duration_s"][0] == 120
-
-
-def _plt(rows):
-    head = "Geolife trajectory\nWGS 84\nAltitude is in Feet\nReserved 3\n0,2,255,My Track,0,0,2,8421376\n0\n"
-    return (head + "".join(f"{la},{lo},0,492,39744.12,{d},{t}\n" for la, lo, d, t in rows)).encode()
-
-
-def test_geolife_reads_zip(tmp_path):
-    z = tmp_path / "g.zip"
-    with zipfile.ZipFile(z, "w") as f:
-        f.writestr("Geolife Trajectories 1.3/Data/000/Trajectory/a.plt",
-                   _plt([(39.9, 116.3, "2008-10-23", "02:53:04"), (39.91, 116.31, "2008-10-23", "02:53:10")]))
-        f.writestr("Geolife Trajectories 1.3/Data/007/Trajectory/b.plt",
-                   _plt([(40.0, 116.0, "2009-01-01", "00:00:00")]))
-        f.writestr("Geolife Trajectories 1.3/Data/007/labels.txt", "Start Time\tEnd Time\tTransportation Mode\n")
-    ev = geolife.read_zip(z)
-    assert ev.height == 3
-    assert ev["id"].to_list() == ["000", "000", "007"]
-    assert ev["timestamp"][0] == _ts(2008, 10, 23, 2, 53, 4)
-    assert ev["lat"][1] == 39.91
-
-
-FSQ = (
-    "470\t49bbd6c0f964a520f4531fe3\t4bf58dd8d48988d127951735\tArts & Crafts Store\t40.7198\t-74.0025\t-240\t"
-    "Tue Apr 03 18:00:09 +0000 2012\n"
-    "470\t4c5cc7b485a1e21e00d35711\t4bf58dd8d48988d103941735\tHome (private)\t40.7161\t-73.8830\t-240\t"
-    "Wed Apr 04 01:02:24 +0000 2012\n"
-    "69\t4c5cc7b485a1e21e00d35711\t4bf58dd8d48988d103941735\tCaf\xe9\t40.7161\t-73.8830\t-300\t"
-    "Sat Nov 10 12:00:00 +0000 2012\n"
-).encode("latin-1")
-
-
-def test_foursquare_parse_and_error():
-    raw = foursquare.parse(FSQ)
-    assert raw["timestamp"][0] == _ts(2012, 4, 3, 18, 0, 9)
-    assert raw["category"][2] == "Caf\xe9"
-    ev, visits = foursquare.to_dataset(raw, seed=1)
-    assert ev["true_lat"].to_list() == [40.7198, 40.7161, 40.7161]
-    d = geo.haversine_m(ev["lat"], ev["lon"], ev["true_lat"], ev["true_lon"])
-    assert (d > 0).all()
-    assert (ev["sig_a"] >= ev["sig_b"]).all() and (ev["sig_b"] > 0).all()
-    assert set(ev["source"].to_list()) <= {"gps", "wifi", "cell"}
-    ev2, _ = foursquare.to_dataset(raw, seed=1)
-    assert ev.equals(ev2)
-    assert visits.columns == ["id", "venue_id", "timestamp", "lat", "lon", "category"]
-    assert visits["lat"].to_list() == [40.7198, 40.7161, 40.7161]
 
 
 def test_write_dataset_loads_all_shapes(tmp_path):

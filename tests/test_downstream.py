@@ -3,7 +3,7 @@ import polars as pl
 import pytest
 
 from dwells import schema
-from dwells.downstream import colocation, nextloc, patterns, places, transitions
+from dwells.downstream import colocation, places
 from dwells.geo import from_enu
 
 H = 3600
@@ -46,41 +46,6 @@ def test_places_uncertainty_merge_uses_sigma():
     assert out["place_id"].n_unique() == 1  # consistent given 300 m uncertainty
     out, _ = places.assign(d.with_columns(sigma_major=pl.lit(5.0), sigma_minor=pl.lit(5.0)), method="mahalanobis", radius_m=50)
     assert out["place_id"].n_unique() == 2
-
-
-def test_patterns_home_work():
-    d, _ = places.assign(dw(WEEK), method="mahalanobis", radius_m=150)
-    prof = patterns.place_profiles(d, utc_offset_h=-6)
-    labels = patterns.label_home_work(prof)
-    home = labels.filter(pl.col("label") == "home")
-    work = labels.filter(pl.col("label") == "work")
-    assert home.height == 1 and work.height == 1
-    hp = prof.filter(pl.col("place_id") == home["place_id"][0])
-    assert hp["n_visits"][0] >= 5
-    assert len(hp["hour_hist"][0]) == 24
-
-
-def test_transitions_and_matrix():
-    d, _ = places.assign(dw(WEEK), method="mahalanobis", radius_m=150)
-    tr = transitions.from_dwells(d)
-    assert set(tr.columns) >= set(schema.TRANSITIONS)
-    m = transitions.matrix(tr)
-    top = m.sort("count", descending=True).row(0, named=True)
-    assert top["count"] >= 4 and top["from_place"] != top["to_place"]
-
-
-def test_nextloc_markov_beats_nothing():
-    seq = pl.DataFrame({"id": ["a"] * 40, "place_id": [0, 1, 0, 2] * 10,
-                        "start_ts": [int((T0 + i * H) * 1e6) for i in range(40)]}).with_columns(
-        pl.col("start_ts").cast(schema.TS))
-    for model in nextloc.MODELS:
-        res = nextloc.evaluate(seq, model=model, test_frac=0.3, top_n=(1, 3))
-        assert 0 <= res["acc@1"] <= 1
-    # after 1 -> always 0; after 2 -> always 0; after 0 -> 1 or 2 alternately (order 2 resolves)
-    assert nextloc.evaluate(seq, model="markov2", test_frac=0.3)["acc@1"] == pytest.approx(1.0)
-    assert nextloc.evaluate(seq, model="markov1", test_frac=0.3)["acc@3"] == pytest.approx(1.0)
-    pred = nextloc.fit(seq.head(28), "markov1").predict_top(seq.head(28), n=2)
-    assert set(pred.columns) >= set(schema.PREDICTIONS)
 
 
 def test_colocation_same_time_distance_and_decoy():

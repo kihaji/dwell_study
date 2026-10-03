@@ -33,10 +33,6 @@ from scipy.stats import chi2
 
 from dwells.algorithms.common import dwells_from_labels, prepare
 
-NAME = "ua_mahalanobis"
-FAMILY = "uncertainty"
-USES_UNCERTAINTY = True
-REFERENCE = "New (this repo). Gating as in Kalman/Mahalanobis data association (Bar-Shalom & Fortmann 1988)."
 
 
 @numba.njit(cache=True)

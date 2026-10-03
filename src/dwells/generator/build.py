@@ -46,14 +46,6 @@ def catalog() -> list[Spec]:
         for prof in sampling.PROFILES:
             specs.append(Spec(f"dev_{area}_{prof}", area, prof, 20, 7, seed=11, group="dev"))
             specs.append(Spec(f"eval_{area}_{prof}", area, prof, 100, 21, seed=1, group="eval"))
-    # scale ladder (suburban): dense per-id GPS by #agents, sparse adtech by #agents
-    for n in (1, 8, 80, 800):
-        specs.append(Spec(f"scale_gps_{n}", "suburban", "gps", n, 28, seed=5, group="scale"))
-    for n in (20, 200, 2000, 18000):
-        specs.append(Spec(f"scale_adtech_{n}", "suburban", "adtech", n, 28, seed=6, group="scale"))
-    # a single id with 1M+ events (5-15 s sampling, no throttling, 60 days)
-    specs.append(Spec("scale_gps_single_1m", "suburban", "gps", 1, 60, seed=7,
-                      gps_opts={"base_range": (4, 6), "throttle": False}, group="scale"))
     return specs
 
 
@@ -99,7 +91,7 @@ def build(spec: Spec, out_root=None) -> dict:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default=None, help="substring filter on dataset name")
-    ap.add_argument("--group", default=None, help="dev | eval | scale")
+    ap.add_argument("--group", default=None, help="dev | eval")
     ap.add_argument("--list", action="store_true")
     a = ap.parse_args()
     for s in catalog():

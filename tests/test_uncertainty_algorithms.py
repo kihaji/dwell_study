@@ -1,13 +1,12 @@
-"""Behavior specific to uncertainty-aware detectors: they must exploit error information."""
+"""The detector must exploit error information (coarse fixes, precision)."""
 
 import numpy as np
 import polars as pl
 import pytest
 
-from dwells import algorithms, schema
+from dwells import schema
+from dwells.algorithms import ua_mahalanobis
 from test_algorithms import PARAMS, T0, track
-
-UA = [n for n in algorithms.names() if algorithms.get(n).USES_UNCERTAINTY and n.startswith(("ua_", "hmm_", "h3_occ"))]
 
 
 def _with_points(ev, rows):
@@ -23,9 +22,9 @@ def _with_points(ev, rows):
     return schema.validate_events(pl.concat([ev, extra.select(ev.columns)]))
 
 
-@pytest.fixture(params=UA)
-def ua(request):
-    return algorithms.get(request.param)
+@pytest.fixture
+def ua():
+    return ua_mahalanobis
 
 
 def test_coarse_point_does_not_break_dwell(ua):
