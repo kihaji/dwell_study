@@ -22,6 +22,7 @@ from concurrent.futures import ProcessPoolExecutor
 from functools import lru_cache
 from pathlib import Path
 
+import numpy as np
 import polars as pl
 
 from dwells import io, schema
@@ -49,11 +50,16 @@ def _truth(ds: str) -> pl.DataFrame:
 
 
 def run_one(ds: str, shape: str, params: dict, perturbation: str | None = None, level: float | None = None,
-            seed: int = 0, detect=None) -> dict:
+            seed: int = 0, detect=None, with_source: bool = False, coverage: float = 1.0) -> dict:
     m = _master(ds)
     if perturbation:
         m = perturb.apply(m, perturbation, level, seed=seed)
-    ev = schema.validate_events(io.shape_view(m, shape))
+    ev = io.shape_view(m, shape, with_source=with_source)
+    if with_source and coverage < 1.0:  # labels missing for a share of reports
+        drop = np.random.default_rng(seed).random(ev.height) >= coverage
+        ev = ev.with_columns(location_source=pl.when(pl.Series(drop)).then(pl.lit("unknown"))
+                             .otherwise(pl.col("location_source")))
+    ev = schema.validate_events(ev)
     t = time.perf_counter()
     d = (detect or ua.detect)(ev, **params)
     rt = time.perf_counter() - t
@@ -70,7 +76,8 @@ def evaluate(profile: str, split: str, shape: str, params: dict, **kw) -> dict:
 
 def _task(job: dict) -> dict:
     res = evaluate(job["profile"], job["split"], job["shape"], job["params"],
-                   perturbation=job.get("perturbation"), level=job.get("level"))
+                   perturbation=job.get("perturbation"), level=job.get("level"),
+                   with_source=job.get("with_source", False), coverage=job.get("coverage", 1.0))
     return {**{k: v for k, v in job.items() if k != "params"}, "params": json.dumps(job["params"], sort_keys=True)} | res
 
 

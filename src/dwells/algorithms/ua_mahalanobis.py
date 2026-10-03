@@ -156,7 +156,9 @@ def detect(events: pl.DataFrame, **params) -> pl.DataFrame:
 def detect_with_members(events: pl.DataFrame, *, min_duration_s: float = 900, radius_m: float = 75,
                         max_gap_s: float = 43200, gate_p: float = 0.99, k_break: int = 3,
                         confirm_s: float = 900, coarse_sigma_m: float = 1000.0, coarse_rel: float = 3.0,
-                        min_events: int = 2, default_sigma_m: float = 10.0, **_):
+                        min_events: int = 2, default_sigma_m: float = 10.0,
+                        source_sigma: dict[str, float] | None = None,
+                        coarse_sources: tuple[str, ...] = ("ip", "user_provided"), **_):
     """Detect dwells. Defaults are the tuned base preset (dwells.presets, docs/tuning.md).
 
     * ``min_duration_s``: the dwell definition, checked on the estimated span.
@@ -169,7 +171,10 @@ def detect_with_members(events: pl.DataFrame, *, min_duration_s: float = 900, ra
       moves a stay) when its 1-sigma exceeds coarse_sigma_m AND coarse_rel x the id's
       median 1-sigma.
     * ``min_events``: informative fixes needed for a dwell.
-    * ``default_sigma_m``: 1-sigma assumed when events carry no accuracy fields.
+    * ``default_sigma_m``: 1-sigma assumed when events carry no accuracy fields;
+      ``source_sigma`` overrides it per ``location_source`` label (when that column exists).
+    * ``coarse_sources``: ``location_source`` labels that are always coarse (not measured
+      positions of the device: IP geolocation, user-provided addresses).
 
     Start/end are estimated half-way to the nearest informative fix outside the dwell
     (capped at max_gap_s / 2). Output columns beyond the DWELLS schema: first_event_ts,
@@ -178,16 +183,18 @@ def detect_with_members(events: pl.DataFrame, *, min_duration_s: float = 900, ra
 
     Returns (dwells, per-event dwell_label array (-1 = not in a kept dwell), per-event
     coarse mask, per-event 1-sigma)."""
-    a = prepare(events, default_sigma_m)
+    a = prepare(events, default_sigma_m, source_sigma)
     v = radius_m**2 / 4
     sigma = np.sqrt((a.cee + a.cnn) / 2)
     # only fixes that are vague in absolute terms AND much vaguer than this id's typical fix
     # are coarse (robust to a uniformly coarse source or a mis-scaled accuracy field)
     med = np.repeat([np.median(sigma[s:e]) for s, e in zip(a.starts[:-1], a.starts[1:])], np.diff(a.starts))
     coarse = (sigma > coarse_sigma_m) & (sigma > coarse_rel * med)
+    if coarse_sources and "location_source" in events.columns:
+        coarse |= events["location_source"].is_in(list(coarse_sources)).to_numpy()
     labels = _kernel(a.starts, a.t, a.x, a.y, a.cee, a.cnn, a.cen, v, chi2.ppf(gate_p, 2),
                      coarse, k_break, max_gap_s, min_events, confirm_s or 0.0)
-    d = dwells_from_labels(events, labels, default_sigma_m=default_sigma_m, extra_var=v)
+    d = dwells_from_labels(events, labels, default_sigma_m=default_sigma_m, extra_var=v, source_sigma=source_sigma)
     if d.height == 0:
         return d, np.full(events.height, -1), coarse, sigma
     d = d.join(_windows(events, labels, ~coarse), on="dwell_label")

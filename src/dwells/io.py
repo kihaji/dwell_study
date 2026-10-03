@@ -19,7 +19,24 @@ SHAPES = ("1", "2", "3_p68", "3_p95", "3_mixed")
 TRUTH_COLS = ("true_lat", "true_lon", "source", "truth_dwell_id")
 
 
-def shape_view(master: pl.DataFrame, shape: str, keep_truth: bool = False) -> pl.DataFrame:
+# generator report source -> location_source label; "stale" (a cached fix re-reported)
+# keeps the label of the report it repeats, as cached locations do on devices
+GENERATOR_SOURCE = {"gps": "gps", "gps_outlier": "gps", "wifi": "network", "cell": "network",
+                    "cdr": "network", "ip": "ip"}
+
+
+def location_source(master: pl.DataFrame) -> pl.Expr:
+    lab = pl.col("source").replace_strict(GENERATOR_SOURCE, default=None)
+    return lab.forward_fill().over("id").fill_null("unknown").alias("location_source")
+
+
+def shape_view(master: pl.DataFrame, shape: str, keep_truth: bool = False,
+               with_source: bool = False) -> pl.DataFrame:
+    """Project the master frame onto a dataset shape; ``with_source`` adds the optional
+    ``location_source`` column derived from the generator's per-report source."""
+    if with_source:
+        return shape_view(master, shape, keep_truth).with_columns(
+            master.select(location_source(master))["location_source"])
     base = ["id", "lat", "lon", "timestamp"]
     extra = [c for c in TRUTH_COLS if keep_truth and c in master.columns]
     if shape == "1":
