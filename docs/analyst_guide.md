@@ -17,10 +17,14 @@ One row of input data: a device was somewhere at a time. Reports are imperfect:
   A position estimated from cell towers can be off by hundreds of meters to kilometers.
   When the data says how accurate each report is, the app uses that; when it doesn't, it
   assumes a typical value for the source.
-- **Coarse report.** A report so vague (worse than about 1 km, and much worse than the
-  device's usual reports) that it cannot tell one building from another. Coarse reports
-  never start, end or move a visit. They can only confirm that the device was "somewhere
-  around here".
+- **Vague (coarse) report.** A report so imprecise that it cannot tell one building from
+  another: its error is above the *vague-report cutoff* (default 1 km at 1σ) **and** more
+  than 3× worse than that device's usual reports. Vague reports are not thrown away. They
+  are kept, can be attached to a visit and count in its report total, but they never start,
+  end, extend or move a visit, and they do not set its arrival/departure window. They can
+  only confirm that the device was "somewhere around here". The second condition keeps a
+  source whose reports are all imprecise, such as cell-tower data, from being discarded
+  entirely.
 - **Gaps.** Devices report irregularly. Some report every few seconds, others a few times
   a day. Silence does not mean the device moved.
 
@@ -291,12 +295,35 @@ looking at a live re-run.
   stops.
 - **max gap between reports:** the longest silence a stay can bridge.
 - **min dwell:** your definition of a dwell.
-- **gate probability:** how strict "close enough given the accuracy" is. Higher means more
-  tolerant.
+- **same-place tolerance:** how far a report may sit from the place center and still count
+  as being there (see below). Higher means more tolerant.
 - **misses to end a stay / away time to end a stay:** how quickly a departure is accepted.
-- **coarse fix threshold:** reports vaguer than this cannot locate a stay.
+- **vague-report cutoff:** reports less precise than this cannot place a stay (see below).
 
 If a conclusion only appears with unusual settings, it is fragile.
+
+### Same-place tolerance
+<!-- help:same_place_tolerance -->
+Each new report is checked against the place where the device is staying: is it close
+enough, given how accurate the report is and how well the place center is known, to count
+as "still here"? The tolerance is a confidence level. At 99% (the default), a report is
+treated as "somewhere else" only when there is less than a 1% chance it could have come
+from the place. The slider also shows the same setting as a distance in *combined error
+widths* (σ): 90% ≈ 2.1σ, 95% ≈ 2.4σ, 99% ≈ 3.0σ, 99.9% ≈ 3.7σ. For example, at 99% a
+report up to about three combined error widths from the center still counts as being
+there. Precise reports therefore must be close; imprecise ones are allowed to scatter more.
+Lower tolerance splits visits more readily; higher tolerance merges nearby stops.
+
+### Vague-report cutoff
+<!-- help:vague_report_cutoff -->
+Reports whose error is larger than this value **and** more than 3× larger than the device's
+usual error are treated as vague (see *Vague report* above): kept, but never used to start,
+end, extend or move a visit. The value is a **1σ error** (about a 68% radius for a circular
+error), which is not the same as the accuracy figure most feeds report. 1 km at 1σ
+corresponds to a CEP50 (`horizontalAccuracy`) of about 1.2 km and a 95% radius of about
+2.4 km. The ×3 condition is fixed. Lowering the cutoff makes more reports vague, which can
+remove visits supported only by imprecise reports; raising it lets imprecise reports place
+visits, which can create vague or misplaced visits.
 
 ## Glossary of shorthand
 

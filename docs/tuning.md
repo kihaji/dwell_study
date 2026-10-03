@@ -95,10 +95,10 @@ for centerpoint-only data:
 |---|---|---|
 | radius_m | 75 | spread of positions inside a place (sets the gate width) |
 | max_gap_s | 43200 (12 h) | longest silence a stay can bridge |
-| gate_p | 0.99 | how far (statistically) a fix may sit from the place center and still belong |
+| gate_p | 0.99 | how far (statistically) a fix may sit from the place center and still belong; app label **same-place tolerance** (99% ≈ 3.0σ) |
 | k_break | 3 | consecutive misses that end a stay |
 | confirm_s | 900 | ...or this long away before being seen back |
-| coarse_sigma_m / coarse_rel | 1000 / 3 | fixes worse than 1 km and 3× the id's typical fix are not used to locate stays |
+| coarse_sigma_m / coarse_rel | 1000 / 3 | fixes worse than 1 km (1σ) and 3× the id's typical fix are not used to locate stays; app label **vague-report cutoff** (sets coarse_sigma_m) |
 | default_sigma_m | gps 10, cdr 300, adtech 300, mixed 30 | error assumed when no accuracy fields exist |
 
 The base matched or beat the per-source tuned values on held-out data, except adtech by

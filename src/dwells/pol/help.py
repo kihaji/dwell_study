@@ -52,5 +52,12 @@ HELP = {
                     "errors or many implausible jumps reduce the reliability of everything else.",
     "tuning": "Re-run detection for this identifier with different settings to see how sensitive the "
               "results are. Does not change the saved results.",
+    "same_place_tolerance": "How far (in combined error widths) a report may sit from the place center and "
+                            "still count as being there. 99% = up to about 3 error widths; higher = more tolerant. "
+                            "A report is treated as elsewhere only when there is less than (100% - tolerance) "
+                            "chance it came from the place.",
+    "vague_report_cutoff": "Reports less precise than this (1-sigma error, m) AND more than 3x less precise than the "
+                           "device's usual reports cannot start, end, extend or move a stay. They are kept and can "
+                           "still be attached to a visit. 1 km at 1-sigma ~ 1.2 km CEP50 ~ 2.4 km at 95%.",
     "utc": "All times and hour/day breakdowns are in UTC.",
 }
