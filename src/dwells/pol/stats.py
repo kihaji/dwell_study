@@ -64,6 +64,12 @@ def _fixed_list(df: pl.DataFrame, key: str, n: int, value: str, name: str, dtype
                                                                     name: pl.List(dtype)})
 
 
+def rank(places: pl.DataFrame, name: str, *by: str) -> pl.DataFrame:
+    """1 = highest per id by the ``by`` columns (descending); ties go to the lower place_id."""
+    return places.sort(["id", *by, "place_id"], descending=[False, *[True] * len(by), False]).with_columns(
+        pl.int_range(1, pl.len() + 1).over("id").alias(name))
+
+
 def place_table(visits: pl.DataFrame, events: pl.DataFrame, presence: pl.DataFrame,
                 active_days: pl.DataFrame) -> pl.DataFrame:
     """Aggregate visits into places with profiles, score components and ranks."""
@@ -107,11 +113,9 @@ def place_table(visits: pl.DataFrame, events: pl.DataFrame, presence: pl.DataFra
         time_share=pl.col("total_dwell_s") / pl.col("total_dwell_s").sum().over("id"),
     ).with_columns(score=100 * (0.35 * pl.col("score_evidence") + 0.15 * pl.col("score_precision")
                                 + 0.5 * pl.col("score_regularity")))
-    p = p.sort("id", "total_dwell_s", descending=[False, True]).with_columns(
-        rank_duration=pl.int_range(1, pl.len() + 1).over("id"))
-    p = p.sort("id", "score", descending=[False, True]).with_columns(rank_score=pl.int_range(1, pl.len() + 1).over("id"))
-    p = p.sort(["id", "n_visits", "total_dwell_s"], descending=[False, True, True]).with_columns(
-        rank_visits=pl.int_range(1, pl.len() + 1).over("id"))
+    p = rank(p, "rank_duration", "total_dwell_s")
+    p = rank(p, "rank_score", "score")
+    p = rank(p, "rank_visits", "n_visits", "total_dwell_s")
     # anchors: most time (primary) and second most time on >= 3 distinct days (secondary);
     # usually home and work, but no local-time inference is made (all times are UTC)
     p = p.with_columns(
@@ -168,12 +172,12 @@ def transitions(visits: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
     t = v.group_by("id", pl.col("place_id").alias("from_place"), "to_place").agg(
         pl.len().alias("n"),
         (pl.col("arrive") - pl.col("end_ts")).dt.total_seconds().median().cast(pl.Float64).alias("median_travel_s"),
-        pl.col("end_ts").dt.hour().mode().first().cast(pl.Int8).alias("typical_depart_hour"),
+        pl.col("end_ts").dt.hour().mode().min().cast(pl.Int8).alias("typical_depart_hour"),  # earliest on ties
         pl.col("end_ts").max().alias("last_ts"),
     ).with_columns(n_from=pl.col("n").sum().over("id", "from_place"))
     t = t.with_columns(prob=pl.col("n") / pl.col("n_from"),
                        prob_low=pl.Series(wilson_low(t["n"].to_numpy(), t["n_from"].to_numpy())))
-    nxt = t.sort(["id", "from_place", "prob", "n"], descending=[False, False, True, True]).with_columns(
+    nxt = t.sort(["id", "from_place", "prob", "n", "to_place"], descending=[False, False, True, True, False]).with_columns(
         rank=pl.int_range(1, pl.len() + 1).over("id", "from_place")).filter(pl.col("rank") <= 5)
     return t.sort("id", "from_place", "prob", descending=[False, False, True]), nxt
 

@@ -68,7 +68,7 @@ anomalies.visit_id -> visits.visit_id
 | weekday_hour_presence_s | 168 values: seconds present per weekday × hour |
 | regularity | mean of day coverage, hour focus and repeat (0–1; see stats.py and the analyst guide) |
 | score, score_evidence, score_precision, score_regularity | pattern confidence 0–100 = 100 × (0.35 evidence + 0.15 precision + 0.50 regularity), components 0–1 |
-| rank_duration, rank_score, rank_visits | 1 = top place of the identifier by total time / score / visits |
+| rank_duration, rank_score, rank_visits | 1 = top place of the identifier by total time / score / visits (then total time); ties go to the lower place_id |
 | label | `primary` (most time), `secondary` (second most, on ≥ 3 days), else null. Usually home and work, but no local-time inference is made |
 | address, place_name, place_category, geocode_distance_m, geocode_source | reverse geocode of the center (nearest OSM address and named feature within 150 m / 60 m) |
 | ellipse_ring, hull_ring | 95% center ellipse; convex hull of all precise member reports |
@@ -81,11 +81,11 @@ different places.
 * `prob` = n / departures from from_place.
 * `prob_low` = Wilson 95% lower bound.
 * `median_travel_s`.
-* `typical_depart_hour` (UTC mode).
+* `typical_depart_hour` (UTC mode; the earliest hour on ties).
 * `last_ts`.
 
 `next_places`: the top 5 transitions per from_place.
-* `rank`, `prob`, `prob_low`.
+* `rank`, `prob`, `prob_low`. Rank orders by `prob`, then `n`, then the lower `to_place`.
 * `n_from` = departures observed from that place (the evidence behind the probability).
 
 ## presence

@@ -132,3 +132,52 @@ def test_wilson_lower_bound():
 
     assert wilson_low(np.array([5]), np.array([10]))[0] == pytest.approx(0.2366, abs=1e-3)
     assert wilson_low(np.array([0]), np.array([4]))[0] == 0.0
+
+
+def test_no_dwells_gives_empty_tables():
+    # an id that never stops: every table except events / quality / presence must be empty
+    n = 300
+    lat, lon = from_enu(np.arange(n) * 500.0, np.zeros(n), 40.0, -75.0)
+    ev = pl.DataFrame({"id": "m", "lat": lat, "lon": lon, "timestamp": ((T0 + np.arange(n) * 60) * 1e6).astype(np.int64)})
+    out = pipeline.analyze(schema.validate_events(ev.with_columns(pl.col("timestamp").cast(pl.Datetime("us", "UTC")))))
+    for name in ("visits", "places", "transitions", "next_places", "anomalies", "presence"):
+        assert out[name].height == 0, name
+        assert out[name].schema == pl.Schema(S.TABLES[name]), name
+    assert out["events"].height == n and out["quality"]["visits"][0] == 0
+
+
+def test_conform_empty_frame_has_no_rows():
+    assert S.conform(pl.DataFrame(), S.VISITS).height == 0
+
+
+def test_visit_anomalies_is_always_a_list(result):
+    # [] when a visit has no anomaly, whether or not other visits in the run have some
+    v = result["visits"]
+    assert v["anomalies"].null_count() == 0
+    flagged = set(result["anomalies"]["visit_id"].to_list())
+    assert all((vid in flagged) == (n > 0) for vid, n in zip(v["visit_id"], v["anomalies"].list.len()))
+
+
+def test_transition_ties_are_deterministic():
+    # from place 0: to 1 twice (departing 09:00 and 07:00 -> mode tie), to 2 once, to 3 once
+    from datetime import datetime, timedelta, timezone
+
+    from dwells.pol import stats
+
+    t0 = datetime(2024, 3, 4, tzinfo=timezone.utc)
+    seq = [(0, 9), (1, 12), (0, 7), (1, 12), (0, 10), (2, 12), (0, 10), (3, 12), (0, 10)]  # (place, depart hour)
+    v = pl.DataFrame({"id": "a", "place_id": [p for p, _ in seq],
+                      "start_ts": [t0 + timedelta(days=d, hours=h - 1) for d, (_, h) in enumerate(seq)],
+                      "end_ts": [t0 + timedelta(days=d, hours=h) for d, (_, h) in enumerate(seq)]})
+    t, nxt = stats.transitions(v)
+    assert t.filter((pl.col("from_place") == 0) & (pl.col("to_place") == 1))["typical_depart_hour"].item() == 7
+    assert nxt.filter(pl.col("from_place") == 0).sort("rank")["to_place"].to_list() == [1, 2, 3]
+
+
+def test_place_rank_ties_go_to_lower_place_id():
+    from dwells.pol import stats
+
+    p = pl.DataFrame({"id": "a", "place_id": [5, 2, 9], "total_dwell_s": [100, 100, 300]})
+    for _ in range(20):  # unstable sorts would make ties order-dependent
+        r = stats.rank(p.sample(fraction=1, shuffle=True), "rank_duration", "total_dwell_s").sort("place_id")
+        assert r["rank_duration"].to_list() == [2, 3, 1]

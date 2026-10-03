@@ -61,9 +61,10 @@ def analyze(events: pl.DataFrame, profile: str = "mixed", params: dict | None = 
         places = _geocode(places, geocoder)
     trans, nxt = stats.transitions(visits) if visits.height else (pl.DataFrame(), pl.DataFrame())
     anom = stats.anomalies(visits, places, active) if visits.height else pl.DataFrame()
-    flags = anom.group_by("visit_id").agg(pl.col("kind").alias("anomalies")) if anom.height else None
+    flags = anom.group_by("visit_id").agg(pl.col("kind").sort().alias("anomalies")) if anom.height else None
     if flags is not None:
-        visits = visits.drop("anomalies").join(flags, on="visit_id", how="left")
+        visits = visits.drop("anomalies").join(flags, on="visit_id", how="left", maintain_order="left").with_columns(
+            pl.col("anomalies").fill_null(pl.lit([], dtype=pl.List(pl.String))))
     q = quality(events, ev, visits)
     out = {
         "events": ev, "visits": visits, "places": places, "transitions": trans, "next_places": nxt,

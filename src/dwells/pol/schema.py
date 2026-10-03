@@ -79,4 +79,6 @@ TABLES = {"events": EVENTS, "visits": VISITS, "places": PLACES, "transitions": T
 
 def conform(df: pl.DataFrame, spec: dict) -> pl.DataFrame:
     """Select and cast to the spec (missing columns become typed nulls)."""
+    if df.width == 0:  # selecting only literals would broadcast to one null row
+        return pl.DataFrame(schema=spec)
     return df.select([(pl.col(c) if c in df.columns else pl.lit(None)).cast(t).alias(c) for c, t in spec.items()])
