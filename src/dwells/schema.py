@@ -7,6 +7,10 @@ import polars as pl
 TS = pl.Datetime("us", "UTC")
 
 EVENTS_BASE = {"id": pl.String, "lat": pl.Float64, "lon": pl.Float64, "timestamp": TS}
+# Optional per-event provenance of the fix (Android/iOS provider terms plus adtech ones;
+# OpenRTB geo.type 1 -> gps, 2 -> ip, 3 -> user_provided). Null = unknown.
+LOCATION_SOURCES = ("unknown", "gps", "network", "fused", "ip", "user_provided")
+
 EVENTS_SHAPE2 = {"horizontalAccuracy": pl.Float64}
 EVENTS_SHAPE3 = {
     "semiMajor": pl.Float64,
@@ -65,6 +69,10 @@ def validate_events(df: pl.DataFrame) -> pl.DataFrame:
     if shape == 3:
         spec |= EVENTS_SHAPE3
     df = df.with_columns([pl.col(c).cast(t) for c, t in spec.items()])
+    if "location_source" in df.columns:
+        df = df.with_columns(pl.col("location_source").cast(pl.String).fill_null("unknown"))
+        _check(df, pl.col("location_source").is_in(LOCATION_SOURCES),
+               f"location_source must be one of {LOCATION_SOURCES}")
     _check(df, pl.col("lat").is_between(-90, 90), "lat out of range")
     _check(df, pl.col("lon").is_between(-180, 180), "lon out of range")
     if shape == 2:

@@ -60,8 +60,13 @@ def mahalanobis2(dx, dy, cee, cnn, cen):
     return (cnn * dx**2 - 2 * cen * dx * dy + cee * dy**2) / det
 
 
-def with_covariance(events: pl.DataFrame, default_sigma_m: float = 30.0) -> pl.DataFrame:
-    """Append cov_ee, cov_nn, cov_en, sigma_m columns derived from whatever error fields exist."""
+def with_covariance(events: pl.DataFrame, default_sigma_m: float = 30.0,
+                    source_sigma: dict[str, float] | None = None) -> pl.DataFrame:
+    """Append cov_ee, cov_nn, cov_en, sigma_m columns derived from whatever error fields exist.
+
+    Without accuracy fields every event gets ``default_sigma_m``, or, when the events carry
+    ``location_source`` and ``source_sigma`` maps that label, the label's assumed 1-sigma.
+    Stated accuracy always wins over the label."""
     cols = set(events.columns)
     n = events.height
     if {"semiMajor", "semiMinor", "azimuth", "probability"} <= cols:
@@ -75,7 +80,12 @@ def with_covariance(events: pl.DataFrame, default_sigma_m: float = 30.0) -> pl.D
         s2 = cep50_to_sigma(events["horizontalAccuracy"].to_numpy()) ** 2
         cee, cnn, cen = s2, s2.copy(), np.zeros(n)
     else:
-        cee = np.full(n, default_sigma_m**2)
+        sig = np.full(n, float(default_sigma_m))
+        if source_sigma and "location_source" in cols:
+            lab = events["location_source"].to_numpy()
+            for k, v in source_sigma.items():
+                sig[lab == k] = v
+        cee = sig**2
         cnn, cen = cee.copy(), np.zeros(n)
     return events.with_columns(
         cov_ee=pl.Series(cee, dtype=pl.Float64),

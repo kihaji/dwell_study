@@ -27,8 +27,8 @@ class Arrays:
     cen: np.ndarray
 
 
-def prepare(events: pl.DataFrame, default_sigma_m: float = 10.0) -> Arrays:
-    ev = with_covariance(events, default_sigma_m)
+def prepare(events: pl.DataFrame, default_sigma_m: float = 10.0, source_sigma: dict | None = None) -> Arrays:
+    ev = with_covariance(events, default_sigma_m, source_sigma)
     codes = ev["id"].rle_id().to_numpy().astype(np.int32)
     starts = np.r_[0, np.flatnonzero(np.diff(codes)) + 1, len(codes)]
     lat, lon = ev["lat"].to_numpy(), ev["lon"].to_numpy()
@@ -41,7 +41,7 @@ def prepare(events: pl.DataFrame, default_sigma_m: float = 10.0) -> Arrays:
 
 
 def dwells_from_labels(events: pl.DataFrame, labels: np.ndarray, default_sigma_m: float = 10.0,
-                       extra_var: float = 0.0) -> pl.DataFrame:
+                       extra_var: float = 0.0, source_sigma: dict | None = None) -> pl.DataFrame:
     """Aggregate events with label >= 0 into dwells (labels unique across ids).
 
     Start/end are the first/last member event times; the centroid is the inverse-
@@ -55,12 +55,13 @@ def dwells_from_labels(events: pl.DataFrame, labels: np.ndarray, default_sigma_m
     out = ev.group_by("id", "label", maintain_order=True).agg(
         pl.col("timestamp").min().alias("start_ts"), pl.col("timestamp").max().alias("end_ts"),
         pl.len().alias("n_events"))
-    out = out.join(_fused(ev, default_sigma_m, extra_var), on="label")
+    out = out.join(_fused(ev, default_sigma_m, extra_var, source_sigma), on="label")
     return schema.validate_dwells(out.rename({"label": "dwell_label"}))
 
 
-def _fused(ev: pl.DataFrame, default_sigma_m: float, extra_var: float = 0.0) -> pl.DataFrame:
-    ev = with_covariance(ev, default_sigma_m).with_columns(
+def _fused(ev: pl.DataFrame, default_sigma_m: float, extra_var: float = 0.0,
+           source_sigma: dict | None = None) -> pl.DataFrame:
+    ev = with_covariance(ev, default_sigma_m, source_sigma).with_columns(
         pl.col("cov_ee") + extra_var, pl.col("cov_nn") + extra_var)
     det = pl.col("cov_ee") * pl.col("cov_nn") - pl.col("cov_en") ** 2
     ev = ev.with_columns(iee=pl.col("cov_nn") / det, inn=pl.col("cov_ee") / det, ien=-pl.col("cov_en") / det,
