@@ -3,7 +3,9 @@
 Every event's error is converted to a 2x2 covariance (m^2) in local east/north
 coordinates, assuming a bivariate normal error model:
 
-* Dataset 2 ``horizontalAccuracy`` is CEP50 (circular, 50%):  sigma = CEP / sqrt(2 ln 2).
+* Dataset 2 ``horizontalAccuracy`` is a circular radius at probability p, given per event
+  by the optional ``accuracyProbability`` column (absent = 0.5, i.e. CEP50):
+  sigma = radius / k(p), so CEP50 / sqrt(2 ln 2).
 * Dataset 3 ellipse at probability p: the ellipse is the k-sigma contour with
   k = sqrt(-2 ln(1 - p)) (chi-square, 2 dof), so sigma_axis = axis / k.
   ``azimuth`` is the semi-major axis bearing in degrees clockwise from north.
@@ -25,10 +27,6 @@ CEP50_K = math.sqrt(2 * math.log(2))  # 1.17741
 
 def k_factor(p):
     return np.sqrt(-2.0 * np.log1p(-np.asarray(p, dtype=float)))
-
-
-def cep50_to_sigma(cep):
-    return np.asarray(cep, dtype=float) / CEP50_K
 
 
 def ellipse_to_cov(a, b, azimuth_deg, p):
@@ -77,7 +75,9 @@ def with_covariance(events: pl.DataFrame, default_sigma_m: float = 30.0,
             events["probability"].to_numpy(),
         )
     elif "horizontalAccuracy" in cols:
-        s2 = cep50_to_sigma(events["horizontalAccuracy"].to_numpy()) ** 2
+        r = events["horizontalAccuracy"].to_numpy()
+        p = events["accuracyProbability"].to_numpy() if "accuracyProbability" in cols else 0.5
+        s2 = (r / k_factor(p)) ** 2
         cee, cnn, cen = s2, s2.copy(), np.zeros(n)
     else:
         sig = np.full(n, float(default_sigma_m))

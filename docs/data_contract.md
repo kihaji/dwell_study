@@ -15,17 +15,25 @@ Clean baselines: GPS 0.981, CDR 0.622, adtech 0.498.
 |---|---|---|
 | `id` | string | Stable device identifier. One id = one device. |
 | `lat`, `lon` | float64, WGS84 decimal degrees | Must be in range. Keep full precision if you can, although rounding to 3 decimals (about 110 m) cost < 0.002 F1 here (see §4). |
-| `timestamp` | UTC instant (microsecond resolution is plenty) | The time the position was **measured**, not received. No timezone-naive local times. |
+| `timestamp` | UTC instant (microsecond resolution is plenty) | The time the position was **measured**, not received. Must be a timezone-aware datetime (other zones are converted to UTC); naive datetimes and epoch numbers are rejected. |
 
 Optional error fields (strongly recommended for anything but dense GPS):
 
 | shape | fields | rule |
 |---|---|---|
-| 2 | `horizontalAccuracy` (m) | Must be the **CEP50 radius**: 50% of true positions fall inside. |
+| 2 | `horizontalAccuracy` (m), optional `accuracyProbability` (0–1 exclusive) | A circular error radius. `accuracyProbability` states its confidence per report (e.g. 0.68 for Android `getAccuracy()`, 0.95 for many vendors). Without that column the radius must be the **CEP50**: 50% of true positions fall inside. |
 | 3 | `semiMajor`, `semiMinor` (m), `azimuth` (deg, 0–180, clockwise from north, of the major axis), `probability` (0–1 exclusive) | `semiMajor >= semiMinor > 0`. `probability` must state the actual confidence of the ellipse (e.g. 0.68 or 0.95). Mixed probabilities within a dataset are fine. |
 
-The 0.68, 0.95 and mixed variants of the same data gave identical results, so the
-normalization is correct **as long as each value is labelled with its true meaning**.
+No nulls (or NaN) are allowed in the required fields or in the error fields of the
+chosen shape, including `accuracyProbability` when it is supplied; validation rejects the
+upload. Fill a missing accuracy with the source's
+nominal value during cleaning, or omit the error fields for the whole upload.
+
+For ellipses, the 0.68, 0.95 and mixed variants of the same data gave identical results,
+so the normalization is correct **as long as each value is labelled with its true
+meaning**. `horizontalAccuracy` with `accuracyProbability` uses the same normalization
+(a test checks that a labelled 68% radius gives exactly the same dwells as the
+equivalent CEP50).
 
 Optional provenance field (recommended whenever the feed states it):
 
@@ -50,11 +58,23 @@ Different sources mean different things by "accuracy":
 * Vendors and telco geolocation often state 95%.
 * Cell-tower data may be the sector radius.
 
-Convert every source to the contract (CEP50 radius, or an ellipse with its true
-probability) in the cleaning pipeline. Factors to CEP50: a 68% radius × 0.780; a
-1σ circle × 1.177; a 95% radius × 0.481.
+Label every source with what its value means, in the cleaning pipeline:
 
-Measured impact of a scale mistake on the stated error:
+| source value | supply |
+|---|---|
+| Android `getAccuracy()` (68% radius) | `horizontalAccuracy` as-is, `accuracyProbability = 0.68` |
+| a vendor's 95% radius | as-is, `accuracyProbability = 0.95` |
+| a 1σ circle | as-is, `accuracyProbability = 0.3935` (the 2D 1σ circle holds 39.35%) |
+| a CEP50 radius | as-is; `accuracyProbability = 0.5` or omit the column |
+| an ellipse | shape 3, with its true `probability` |
+
+Mixed confidences in one upload are fine. Alternatively, rescale to CEP50 and omit the
+column: a 68% radius × 0.780; a 1σ circle × 1.177; a 95% radius × 0.481.
+
+The table below shows what an unlabelled or mislabelled scale costs.
+
+Measured impact of a scale mistake on the stated error (from the tuning branch; these are
+exactly the errors a missing or wrong `accuracyProbability` produces):
 
 | reported error vs truth | GPS | CDR | adtech | typical cause |
 |---|---|---|---|---|

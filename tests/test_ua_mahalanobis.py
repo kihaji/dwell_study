@@ -72,3 +72,15 @@ def test_brief_outlier_does_not_break_stay_with_confirm_s():
     # dense: outlier fix, back in place 1 min later
     rows = [(m, 0, 0) for m in range(0, 30)] + [(30, 300, 0)] + [(m, 1, 1) for m in range(31, 60)]
     assert ua.detect(events(rows), confirm_s=900, **dict(P, k_break=2)).height == 1
+
+
+def test_accuracy_probability_makes_68pct_radius_equivalent_to_cep50():
+    # the same dwells whether accuracy is stated as CEP50 or as a labelled 68% radius
+    rows = SPARSE + [(120, 4100, 0), (150, 0, 0), (170, 3, 2)]
+    cep = events(rows)
+    r68 = cep.with_columns(horizontalAccuracy=pl.col("horizontalAccuracy") * float(1.5096 / 1.1774),
+                           accuracyProbability=pl.lit(0.68))
+    a, b = ua.detect(cep, **P), ua.detect(schema.validate_events(r68), **P)
+    assert a.height > 0
+    assert a.select("start_ts", "end_ts").equals(b.select("start_ts", "end_ts"))
+    assert a["sigma_major"].to_list() == pytest.approx(b["sigma_major"].to_list(), rel=1e-3)

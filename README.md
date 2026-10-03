@@ -26,6 +26,7 @@ uv run --extra app python app/app.py        # http://127.0.0.1:8050
 Docs:
 * `docs/analyst_guide.md`: every view and metric, for analysts.
 * `docs/data_contract.md`: what the cleaning pipeline must deliver, with measured impact.
+* `docs/data_flow.md`: developer walkthrough from cleaned upload to result files the UI reads.
 * `docs/outputs.md`: output table reference.
 * `docs/tuning.md`: algorithm changes, presets and the evidence behind them.
 * `docs/algorithms/ua_mahalanobis.md`, `docs/algorithms/downstream.md`, `docs/uncertainty.md`:

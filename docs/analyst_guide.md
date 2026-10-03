@@ -331,10 +331,10 @@ Lower tolerance splits visits more readily; higher tolerance merges nearby stops
 <!-- help:vague_report_cutoff -->
 Reports whose error is larger than this value **and** more than 3× larger than the device's
 usual error are treated as vague (see *Vague report* above): kept, but never used to start,
-end, extend or move a visit. The value is a **1σ error** (about a 68% radius for a circular
-error), which is not the same as the accuracy figure most feeds report. 1 km at 1σ
-corresponds to a CEP50 (`horizontalAccuracy`) of about 1.2 km and a 95% radius of about
-2.4 km. The ×3 condition is fixed. Lowering the cutoff makes more reports vague, which can
+end, extend or move a visit. The value is a **1σ error**, which is not the same as the
+accuracy figure most feeds report: a circle of radius 1σ holds only about 39% of true
+positions. 1 km at 1σ corresponds to a CEP50 of about 1.2 km, a 68% radius (Android's
+accuracy figure) of about 1.5 km and a 95% radius of about 2.4 km. The ×3 condition is fixed. Lowering the cutoff makes more reports vague, which can
 remove visits supported only by imprecise reports; raising it lets imprecise reports place
 visits, which can create vague or misplaced visits.
 
@@ -342,7 +342,7 @@ visits, which can create vague or misplaced visits.
 
 | term | meaning |
 |---|---|
-| 1σ ("one sigma") | a typical error size: about 68% of reports fall within this distance of the truth |
+| 1σ ("one sigma") | a typical error size per direction: about 68% of reports are within this distance of the truth east–west (and likewise north–south); a circle of this radius holds about 39% of them |
 | CEP50 | circular error probable: radius containing 50% of true positions |
 | 95% ellipse | outline containing the truth with 95% confidence |
 | UTC | Coordinated Universal Time (Zulu); no daylight saving |

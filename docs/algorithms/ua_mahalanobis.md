@@ -42,7 +42,8 @@ z_i = μ + u_i + e_i,   u_i ~ N(0, v I)  (movement inside the place),   e_i ~ N(
 `v = R²/4` is the per-axis variance of a point uniformly distributed in a disk of radius
 `R = radius_m` (`E[x²] = R²/4`). The Gaussian stands in for that uniform distribution.
 `C_i` comes from `with_covariance` (see [../uncertainty.md](../uncertainty.md)). For
-shape 1, `C_i = default_sigma_m² I = 100 I`.
+shape 1, `C_i = σ² I` with σ = the `location_source` value from `source_sigma`, else
+`default_sigma_m`.
 
 **Estimate (information form, flat prior on μ).** After accepting events `A`:
 
@@ -50,8 +51,8 @@ shape 1, `C_i = default_sigma_m² I = 100 I`.
 I = Σ_{i∈A} R_i⁻¹,   b = Σ_{i∈A} R_i⁻¹ z_i,   μ̂ = I⁻¹ b,   P = Cov(μ̂) = I⁻¹
 ```
 
-(`ua_mahalanobis.py:81-86` seed, `:94-96` estimate, `:107-115` update). 2x2 inverses are
-closed-form.
+(in `_kernel`: seeding, the "current estimate" block, and the update on a passing
+event). 2x2 inverses are closed-form.
 
 **Gate.** For a candidate `z`, the innovation `z - μ̂` has covariance
 `S = R_i + P = C_i + v I + P`, because `μ̂` is independent of the new event. Under the
@@ -61,7 +62,8 @@ closed-form.
 d² <= χ²₂⁻¹(gate_p) = -2 ln(1 - gate_p)       (= 9.21 for gate_p = 0.99)
 ```
 
-(`:97-99`, threshold `chi2.ppf(gate_p, 2)` at `:147`).
+(threshold `chi2.ppf(gate_p, 2)`, computed in `detect_with_members` and passed to the
+kernel).
 
 Effective metric radius: for a precise fix (`σ_i << radius_m`) and a well-established
 stay (`P → 0`), accept `|z - μ̂| <= sqrt(9.21 · (σ_i² + r²/4)) = 1.517 · sqrt(r² + 4σ_i²)`.
@@ -71,47 +73,51 @@ one event `P = R_seed`, so `S ≈ 2R` and the gate is `√2` larger), which make
 fix easy to accept.
 
 **Coarse events.** `coarse_i ⇔ σ_i > coarse_sigma_m and σ_i > coarse_rel · median_id(σ)`,
-with `σ_i = sqrt((C_ee + C_nn)/2)` (computed in `detect_with_members`). A coarse fix has
+or the report's `location_source` is in `coarse_sources` (`ip`, `user_provided`), with `σ_i = sqrt((C_ee + C_nn)/2)` (computed in `detect_with_members`). A coarse fix has
 `S ≈ C_i`, so almost any displacement passes the gate. Such a fix carries no information
 about *which* place, only a little about *whether still here*.
 
-## Algorithm (`_kernel`, `ua_mahalanobis.py:41-139`)
+## Algorithm (`_kernel`)
 
 Per id, in time order, with state `is_open, c0, n_inf, n_buf, n_fail, first_fail,
-t_first, t_last` and the information sums:
+t_last` and the information sums:
 
-1. **Gap close** (`:59-60`): if a stay is open and an *informative* event arrives more
+1. **Gap close**: if a stay is open and an *informative* event arrives more
    than `max_gap_s` after the last **accepted informative** event (`t_last`), close
    the stay. Coarse events never trigger a gap close.
-2. **Close handling** (`:61-72`): accept the stay as a dwell if
-   `n_inf >= min_events` and `t_last - t_first >= min_duration_s`. Otherwise reset its
-   labels to -1. If there were pending failures, restart processing at `first_fail`,
+2. **Close handling**: keep the stay if `n_inf >= min_events`, otherwise reset its
+   labels to -1. (`min_duration_s` is checked afterwards, on the estimated span; see
+   below.) If there were pending failures, restart processing at `first_fail`,
    so those events may seed the next stay.
-3. **Seeding** (`:75-92`): only an informative event can seed. Coarse events while no
+3. **Seeding**: only an informative event can seed. Coarse events while no
    stay is open are skipped. Seeding sets `I = R_i⁻¹`, `b = R_i⁻¹ z_i`,
-   `n_inf = 1`, `t_first = t_last = t_i`.
-4. **Coarse event in an open stay** (`:100-105`): if it passes the gate, append it to a
+   `n_inf = 1`, `t_last = t_i`.
+4. **Coarse event in an open stay**: if it passes the gate, append it to a
    pending buffer. Either way, move on. It never counts as a miss.
-5. **Informative event passes** (`:106-121`): add its information to `I, b`, label
+5. **Time-confirmed departure**: if an informative event passes the gate after pending
+   misses, and the first miss was at least `confirm_s` earlier, the id really left and
+   came back. Close the stay (as in step 2) and restart at `first_fail`, so the return
+   starts a new stay.
+6. **Informative event passes**: add its information to `I, b`, label
    it, attach all buffered coarse events (confirmed: the stay continued past them),
    clear the buffer and the miss counter, `n_inf += 1`, `t_last = t_i`.
-6. **Informative event fails** (`:122-137`): remember `first_fail` and increment
+7. **Informative event fails**: remember `first_fail` and increment
    `n_fail`. When `n_fail >= k_break`, close the stay at its last confirmed event
    (accept or reject as in step 2) and restart at `first_fail`. A single failing event
    followed by a passing one is skipped as an outlier. It stays unlabelled, but it lies
    inside the dwell span.
-7. End of track: close as in step 2.
+8. End of track: close as in step 2.
 
-`detect` (`:142-151`) then calls `dwells_from_labels(..., centroid="fused",
-extra_var=v)`, which recomputes the same information-weighted estimate over all
+`detect_with_members` then calls `dwells_from_labels(..., extra_var=v)`, which recomputes the same information-weighted estimate over all
 labelled events (informative plus attached coarse) and reports its 1-sigma ellipse.
 
 ### Worked intuition for coarse points
 
-Setting: `radius_m = 100` (coarse threshold 300 m), a stay at the origin with 5 m GPS
-fixes every minute.
+Setting: `radius_m = 100`, a stay at the origin with 5 m GPS fixes every minute. A fix is
+coarse when its 1σ exceeds 1 km and 3× the id's typical 5 m.
 
-- **Coarse fix in the middle** (`tests/test_uncertainty_algorithms.py:36-41`): at
+- **Coarse fix in the middle** (`test_coarse_point_does_not_break_dwell` in
+  `tests/test_uncertainty_algorithms.py`): at
   minute 30.5 a fix 800 m away with CEP 1500 m, so σ = 1274 m. It is coarse. Its
   `d² ≈ 800² / (1274² + 2500) ≈ 0.39`, so it passes the gate and is buffered. The
   next GPS fix passes and the coarse fix is attached. The stay is not broken, and the
@@ -119,13 +125,13 @@ fixes every minute.
   fix. Without the coarse rule a plain radius detector would break here. Even as an
   informative event the fix would pass the gate, but it would have been allowed to
   *seed* stays elsewhere.
-- **Coarse fix 3 h after the last GPS fix** (`:44-49`): it is buffered but never
+- **Coarse fix 3 h after the last GPS fix** (`test_coarse_point_does_not_extend_dwell`): it is buffered but never
   confirmed by a later informative fix, so it is not labelled and the dwell ends at the
   last GPS fix.
-- **CDR-only stretches**: if every fix of an id is coarse at the chosen radius, the id
-  produces **no dwells at all**. The relative coarse rule (`coarse_rel`) prevents this
-  for uniformly coarse sources such as CDR: their fixes are not more than 3× worse than
-  the id's typical fix, so they stay informative.
+- **Uniformly coarse ids**: the relative rule (`coarse_rel`) keeps a uniformly coarse
+  source such as CDR informative, because its fixes are not more than 3× worse than the
+  id's typical fix. Only an id whose reports are all labelled `ip` / `user_provided`
+  is entirely coarse, and it produces **no dwells at all**.
 
 ## Parameters
 
@@ -163,7 +169,7 @@ k-miss outlier tolerance.
   (`arrive_after`–`arrive_by`, `depart_after`–`depart_by`), capped at `max_gap_s / 2`.
   At track ends the observed first/last event is used.
 - Centroid: fused (inverse-covariance-weighted) mean over labelled events, with
-  `extra_var = v` added to each event's variance (`common.py:80-99`). This is the same
+  `extra_var = v` added to each event's variance (`algorithms/common.py`, `_fused`). This is the same
   estimator as the kernel.
 - `sigma_major/minor, azimuth`: 1-sigma ellipse of `P = (Σ (C_i + vI)⁻¹)⁻¹`. For `n`
   GPS fixes, `σ ≈ sqrt((σ_gps² + r²/4)/n)`, for example 7.9 m for 40 fixes at
@@ -196,7 +202,7 @@ k-miss outlier tolerance.
   `tools/ua-tuning`) draws fixes from
   `Σ_true = Σ_reported / c²` with `c ~ lognormal(0, 0.25)`, so reported errors are only
   roughly honest. Overconfident sources cause spurious breaks, which `k_break` mitigates.
-- If every fix is coarse, there are no dwells (see above).
+- If every fix is coarse (all `ip` / `user_provided`), there are no dwells (see above).
 - It passes all contract and coarse-point tests (`tests/test_algorithms.py`, `tests/test_uncertainty_algorithms.py`).
 
 ## References

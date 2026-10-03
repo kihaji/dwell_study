@@ -110,7 +110,7 @@ One row per flagged visit:
 
 | column | meaning |
 |---|---|
-| shape | input shape (1 centerpoint, 2 CEP50, 3 ellipse) |
+| shape | input shape (1 centerpoint, 2 accuracy radius, 3 ellipse) |
 | n_events, first_ts, last_ts, span_days, active_days, events_per_active_day | volume |
 | hour_coverage | share of clock hours in the observed span with at least one report |
 | gap_p50_s, gap_p95_s, gap_max_s | time between consecutive reports |

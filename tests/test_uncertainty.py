@@ -32,8 +32,8 @@ def test_k_factor_values():
     assert U.k_factor(1 - math.exp(-0.5)) == pytest.approx(1.0)
 
 
-def test_cep50_to_sigma():
-    assert U.cep50_to_sigma(1.1774) == pytest.approx(1.0, abs=1e-4)
+def test_cep50_is_k_at_half():
+    assert U.k_factor(0.5) == pytest.approx(U.CEP50_K) == pytest.approx(1.1774, abs=1e-4)
 
 
 def test_ellipse_cov_roundtrip():
@@ -95,3 +95,18 @@ def test_with_covariance_shape3_normalizes_probability():
     s_major = 100.0 / U.k_factor(0.95)
     assert out["cov_nn"][0] == pytest.approx(s_major**2)
     assert "sigma_m" in out.columns
+
+
+def test_with_covariance_shape2_accuracy_probability():
+    # a 68% / 95% radius is converted with that probability's k-factor, not CEP50's
+    ev = _events(2).with_columns(horizontalAccuracy=pl.Series([15.096, 24.477]),
+                                 accuracyProbability=pl.Series([0.68, 0.95]))
+    out = U.with_covariance(ev)
+    assert out["sigma_m"].to_list() == pytest.approx([10.0, 10.0], rel=1e-3)
+    assert out["cov_en"].to_list() == pytest.approx([0.0, 0.0])
+
+
+def test_with_covariance_shape2_defaults_to_cep50():
+    ev = _events(2)
+    with_p = U.with_covariance(ev.with_columns(accuracyProbability=pl.lit(0.5)))
+    assert with_p["cov_ee"].to_list() == pytest.approx(U.with_covariance(ev)["cov_ee"].to_list())

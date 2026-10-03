@@ -59,6 +59,7 @@ HELP = {
                             "chance it came from the place.",
     "vague_report_cutoff": "Reports less precise than this (1-sigma error, m) AND more than 3x less precise than the "
                            "device's usual reports cannot start, end, extend or move a stay. They are kept and can "
-                           "still be attached to a visit. 1 km at 1-sigma ~ 1.2 km CEP50 ~ 2.4 km at 95%.",
+                           "still be attached to a visit. 1 km at 1-sigma ~ 1.2 km CEP50 ~ 1.5 km at 68% (Android "
+                           "accuracy) ~ 2.4 km at 95%.",
     "utc": "All times and hour/day breakdowns are in UTC.",
 }

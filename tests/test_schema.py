@@ -76,3 +76,68 @@ def test_validate_dwells_fills_optional_uncertainty():
     assert out["duration_s"][0] == 600
     assert out["dwell_id"][0] == 0
     assert out["sigma_major"][0] is None
+
+
+@pytest.mark.parametrize(
+    "col, extra",
+    [
+        ("id", {}),
+        ("lat", {}),
+        ("lon", {}),
+        ("timestamp", {}),
+        ("horizontalAccuracy", {"horizontalAccuracy": [5.0, 5.0]}),
+        ("semiMajor", {"semiMajor": [5.0, 5.0], "semiMinor": [3.0, 3.0], "azimuth": [10.0, 10.0],
+                       "probability": [0.95, 0.95]}),
+        ("probability", {"semiMajor": [5.0, 5.0], "semiMinor": [3.0, 3.0], "azimuth": [10.0, 10.0],
+                         "probability": [0.95, 0.95]}),
+    ],
+)
+def test_validate_events_rejects_nulls(col, extra):
+    d = {"id": ["a", "a"], "lat": [1.0, 1.0], "lon": [2.0, 2.0], "timestamp": [0, 1]} | extra
+    df = pl.DataFrame(d).with_columns(pl.col("timestamp").cast(pl.Datetime("us", "UTC")))
+    df = df.with_columns(pl.when(pl.int_range(pl.len()) == 1).then(None).otherwise(pl.col(col)).alias(col))
+    with pytest.raises(ValueError, match=col):
+        schema.validate_events(df)
+
+
+def test_validate_events_rejects_nan_accuracy():
+    with pytest.raises(ValueError, match="horizontalAccuracy"):
+        schema.validate_events(_ev(horizontalAccuracy=[float("nan")]))
+
+
+def test_validate_events_rejects_naive_timestamps():
+    df = _ev().with_columns(pl.col("timestamp").dt.replace_time_zone(None))
+    with pytest.raises(ValueError, match="timezone"):
+        schema.validate_events(df)
+
+
+def test_validate_events_rejects_non_datetime_timestamps():
+    df = pl.DataFrame({"id": ["a"], "lat": [1.0], "lon": [2.0], "timestamp": [0]})
+    with pytest.raises(ValueError, match="timezone"):
+        schema.validate_events(df)
+
+
+def test_validate_events_converts_other_timezones_to_utc():
+    local = pl.DataFrame({"id": ["a"], "lat": [1.0], "lon": [2.0]}).with_columns(
+        timestamp=pl.datetime(2026, 1, 5, 8, time_zone="America/Chicago"))
+    out = schema.validate_events(local)
+    assert out.schema["timestamp"] == pl.Datetime("us", "UTC")
+    assert out["timestamp"].dt.hour()[0] == 14  # 08:00 CST = 14:00 UTC
+
+
+def test_accuracy_probability_validated_and_cast():
+    out = schema.validate_events(_ev(horizontalAccuracy=[5.0], accuracyProbability=[0.68]))
+    assert out.schema["accuracyProbability"] == pl.Float64
+
+
+@pytest.mark.parametrize("p", [0.0, 1.0, None, float("nan")])
+def test_accuracy_probability_rejected(p):
+    df = _ev(horizontalAccuracy=[5.0]).with_columns(accuracyProbability=pl.Series([p], dtype=pl.Float64))
+    with pytest.raises(ValueError, match="accuracyProbability"):
+        schema.validate_events(df)
+
+
+def test_accuracy_probability_ignored_without_horizontal_accuracy():
+    # only meaningful for shape 2; shape 3 carries its own probability per ellipse
+    out = schema.validate_events(_ev(accuracyProbability=[None]))
+    assert schema.event_shape(out) == 1

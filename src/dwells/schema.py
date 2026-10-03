@@ -12,6 +12,9 @@ EVENTS_BASE = {"id": pl.String, "lat": pl.Float64, "lon": pl.Float64, "timestamp
 LOCATION_SOURCES = ("unknown", "gps", "network", "fused", "ip", "user_provided")
 
 EVENTS_SHAPE2 = {"horizontalAccuracy": pl.Float64}
+# Optional with shape 2: the confidence of horizontalAccuracy (e.g. 0.68 for Android
+# getAccuracy(), 0.95 for many vendors). Absent = 0.5 (CEP50).
+ACCURACY_PROBABILITY = "accuracyProbability"
 EVENTS_SHAPE3 = {
     "semiMajor": pl.Float64,
     "semiMinor": pl.Float64,
@@ -60,15 +63,26 @@ def _check(df: pl.DataFrame, expr: pl.Expr, msg: str) -> None:
 
 
 def validate_events(df: pl.DataFrame) -> pl.DataFrame:
-    """Check ranges, cast to canonical dtypes, sort by (id, timestamp)."""
+    """Check ranges, cast to canonical dtypes, sort by (id, timestamp).
+
+    Timestamps must be timezone-aware datetimes (any zone; converted to UTC). Required and
+    error columns must have no nulls, and float columns no NaN/inf."""
     _require(df, EVENTS_BASE, "events")
+    ts = df.schema["timestamp"]
+    if not isinstance(ts, pl.Datetime) or ts.time_zone is None:
+        raise ValueError(f"timestamp must be a timezone-aware datetime (got {ts}); convert to UTC upstream")
     shape = event_shape(df)
     spec = dict(EVENTS_BASE)
     if shape == 2:
         spec |= EVENTS_SHAPE2
+        if ACCURACY_PROBABILITY in df.columns:
+            spec[ACCURACY_PROBABILITY] = pl.Float64
     if shape == 3:
         spec |= EVENTS_SHAPE3
     df = df.with_columns([pl.col(c).cast(t) for c, t in spec.items()])
+    for c, t in spec.items():
+        ok = pl.col(c).is_not_null() & (pl.col(c).is_finite() if t == pl.Float64 else True)
+        _check(df, ok, f"{c} has null or non-finite values")
     if "location_source" in df.columns:
         df = df.with_columns(pl.col("location_source").cast(pl.String).fill_null("unknown"))
         _check(df, pl.col("location_source").is_in(LOCATION_SOURCES),
@@ -77,6 +91,9 @@ def validate_events(df: pl.DataFrame) -> pl.DataFrame:
     _check(df, pl.col("lon").is_between(-180, 180), "lon out of range")
     if shape == 2:
         _check(df, pl.col("horizontalAccuracy") > 0, "horizontalAccuracy must be > 0")
+        if ACCURACY_PROBABILITY in spec:
+            _check(df, pl.col(ACCURACY_PROBABILITY).is_between(0, 1, closed="none"),
+                   "accuracyProbability outside (0, 1)")
     if shape == 3:
         _check(df, pl.col("semiMinor") > 0, "semiMinor must be > 0")
         _check(df, pl.col("semiMajor") >= pl.col("semiMinor"), "semiMajor < semiMinor")
