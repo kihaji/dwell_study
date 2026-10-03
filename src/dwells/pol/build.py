@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 from dwells import io
-from dwells.generator.area import DATA_DIR
+from dwells.io import DATA_DIR
 from dwells.pol import pipeline
 from dwells.pol.geocode import OfflineOSMGeocoder
 from dwells.presets import params_for

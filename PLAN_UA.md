@@ -1,5 +1,9 @@
 # Branch plan: focus/ua-mahalanobis
 
+> Status: complete. To keep this branch a focused porting reference, the evaluation
+> tooling (synthetic generator, tuning harness, defect injection, scoring metrics, STAGA
+> loader) was moved to branch `tools/ua-tuning`; results and tuned presets remain here.
+
 Goal: a focused, tuned implementation of `ua_mahalanobis` with tight output data
 structures, an input-data contract for the upstream cleaning pipeline, and an analyst
 app (Plotly Dash + deckgl-dash) for pattern-of-life exploration. Decisions from the

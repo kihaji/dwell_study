@@ -4,7 +4,7 @@ Providers expose ``reverse(lat, lon) -> GeoResult``:
 
 * OfflineOSMGeocoder (default): nearest OpenStreetMap address / named feature from a
   local index (parquet) built once per area, either downloaded from Overpass
-  (``build_index_for_area``) or read from a local OSM XML extract
+  (``build_index_for_point``) or read from a local OSM XML extract
   (``build_index_from_xml``) for air-gapped use. Queries are fully offline.
 * NominatimGeocoder (optional): online reverse geocoding via a Nominatim server
   (public server policy: <= 1 request/s, identify via User-Agent), cached on disk.
@@ -27,7 +27,7 @@ import polars as pl
 from scipy.spatial import cKDTree
 
 from dwells import geo
-from dwells.generator.area import AREAS, DATA_DIR
+from dwells.io import DATA_DIR
 
 ADDR_TAGS = ["name", "addr:housenumber", "addr:street", "addr:city", "addr:postcode",
              "amenity", "shop", "office", "leisure", "building", "tourism"]
@@ -67,16 +67,17 @@ def _features_to_index(feats) -> pl.DataFrame:
     return df.filter(pl.col("name").is_not_null() | pl.col("street").is_not_null() | pl.col("category").is_not_null())
 
 
-def build_index_for_area(area: str) -> Path:
-    """Download address/name features for a study area from Overpass (needs internet once)."""
+def build_index_for_point(center: tuple[float, float], dist_m: float, out: str | Path) -> Path:
+    """Download address/name features within dist_m of center (lat, lon) from Overpass
+    (needs internet once; the index is then used offline)."""
     import osmnx as ox
 
-    cfg = AREAS[area]
     ox.settings.use_cache = True
     ox.settings.cache_folder = str(DATA_DIR / "osm" / "_cache")
     tags = {"addr:housenumber": True, "name": True, "amenity": True, "shop": True, "office": True}
-    feats = ox.features_from_point(cfg["center"], tags=tags, dist=cfg["dist_m"])
-    out = DATA_DIR / "osm" / area / "geocode.parquet"
+    feats = ox.features_from_point(center, tags=tags, dist=dist_m)
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
     _features_to_index(feats).write_parquet(out)
     return out
 
@@ -100,10 +101,6 @@ class OfflineOSMGeocoder:
         self.tree = cKDTree(np.c_[x, y])
         self.rows = idx.to_dicts()
         self.max_d, self.name_d = max_distance_m, name_distance_m
-
-    @classmethod
-    def for_repo_areas(cls, **kw):
-        return cls([DATA_DIR / "osm" / a / "geocode.parquet" for a in AREAS], **kw)
 
     def reverse(self, lat: float, lon: float) -> GeoResult:
         x, y = geo.to_enu(np.array([lat]), np.array([lon]), self.lat0, self.lon0)

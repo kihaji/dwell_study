@@ -1,7 +1,7 @@
 """Dataset I/O and shape views.
 
 A synthetic dataset directory holds ``events.parquet`` (master frame with truth and
-reported error, see generator/sampling.py) plus ``truth_*.parquet`` tables.
+reported error, written by the generator on branch tools/ua-tuning) plus ``truth_*.parquet`` tables.
 ``shape_view`` projects the master frame onto one of the five evaluated shapes;
 all shapes share identical lat/lon so shape comparisons isolate the error info.
 """
@@ -15,6 +15,7 @@ import polars as pl
 from dwells import schema
 from dwells.uncertainty import CEP50_K
 
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"  # repo datasets (git-ignored)
 SHAPES = ("1", "2", "3_p68", "3_p95", "3_mixed")
 TRUTH_COLS = ("true_lat", "true_lon", "source", "truth_dwell_id")
 
@@ -74,8 +75,6 @@ def load_truth(dataset_dir: str | Path, table: str) -> pl.DataFrame:
 
 def dataset_dirs() -> dict[str, Path]:
     """All repo datasets (synthetic + public) that have an events.parquet."""
-    from dwells.generator.area import DATA_DIR
-
     out = {}
     for root in (DATA_DIR / "synthetic", DATA_DIR / "public"):
         if root.exists():

@@ -123,8 +123,9 @@ fixes every minute.
   confirmed by a later informative fix, so it is not labelled and the dwell ends at the
   last GPS fix.
 - **CDR-only stretches**: if every fix of an id is coarse at the chosen radius, the id
-  produces **no dwells at all**. The harness therefore tunes `radius_m` up to 2000 m for
-  CDR (coarse threshold 6 km), and then the CDR fixes become informative.
+  produces **no dwells at all**. The relative coarse rule (`coarse_rel`) prevents this
+  for uniformly coarse sources such as CDR: their fixes are not more than 3× worse than
+  the id's typical fix, so they stay informative.
 
 ## Parameters
 
@@ -191,7 +192,8 @@ k-miss outlier tolerance.
   about 1.5 · r.
 - The `v = r²/4` model conflates "place size" with "per-fix jitter". A large place
   sampled at a precise, fixed spot is still given a 1.5 · r gate.
-- Calibration: the gate assumes honest `C_i`. The generator draws fixes from
+- Calibration: the gate assumes honest `C_i`. The synthetic evaluation data (generator on
+  `tools/ua-tuning`) draws fixes from
   `Σ_true = Σ_reported / c²` with `c ~ lognormal(0, 0.25)`, so reported errors are only
   roughly honest. Overconfident sources cause spurious breaks, which `k_break` mitigates.
 - If every fix is coarse, there are no dwells (see above).

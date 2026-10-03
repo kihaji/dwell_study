@@ -4,8 +4,8 @@ What the upstream cleaning and transformation pipeline must deliver, and how muc
 defect costs. The impact numbers are measured: held-out synthetic data (eval sets,
 urban + suburban), tuned presets, shape 3 (ellipses), minimum dwell 15 min. Each defect
 is injected on purpose and the resulting change in F1 is reported (F1 is the dwell-
-detection score, 0–1). Reproduce with `uv run python -m dwells.harness.tune robustness`
-(see `src/dwells/harness/perturb.py`).
+detection score, 0–1). The generator, tuning harness and defect injection are on branch `tools/ua-tuning`
+(`uv run python -m dwells.harness.tune robustness`, `src/dwells/harness/perturb.py`).
 
 Clean baselines: GPS 0.981, CDR 0.622, adtech 0.498.
 

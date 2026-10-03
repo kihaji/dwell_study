@@ -1,4 +1,4 @@
-"""Canonical table schemas shared by the generator, algorithms, harness and viewer."""
+"""Canonical input (events) and dwell table schemas."""
 
 from __future__ import annotations
 

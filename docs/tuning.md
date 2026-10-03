@@ -5,7 +5,8 @@ Protocol:
   and confirmed on the held-out **eval** datasets (different agents and seeds).
 * Scores are dwell-detection F1 at a 15-minute minimum dwell, averaged over both areas.
 * Raw results are in `results/ua/{baseline,sweep,robustness}.parquet`, produced by
-  `src/dwells/harness/tune.py`.
+  `src/dwells/harness/tune.py`. The synthetic data generator and the tuning harness are on
+  branch `tools/ua-tuning`; this branch keeps the results and the tuned presets.
 
 ## Result
 

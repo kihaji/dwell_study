@@ -4,19 +4,50 @@ import numpy as np
 import polars as pl
 import pytest
 
-from dwells import io, schema
-from dwells.generator import sampling
-from dwells.generator.area import synthetic_grid
-from dwells.generator.simulate import SimConfig, simulate
+from dwells import schema
+from dwells.geo import from_enu
 from dwells.pol import pipeline
 from dwells.pol import schema as S
+
+T0 = 1_709_510_400  # 2024-03-04 00:00 UTC, a Monday
+H = 3600
+
+
+def _routine(uid, home, work, gym, seed):
+    """14 days: home overnight, work 08-17 on weekdays, gym 18-19 Mon/Wed/Fri;
+    one GPS fix every 5 min (8 m jitter), every 1 min while traveling."""
+    rng = np.random.default_rng(seed)
+    plan = []  # (start_h, end_h, (x, y)) stays in hours since T0
+    for d in range(14):
+        b = d * 24
+        if d % 7 < 5:
+            plan += [(b, b + 7.5, home), (b + 8, b + 17, work)]
+            if d % 7 in (0, 2, 4):
+                plan += [(b + 17.5, b + 19, gym), (b + 19.5, b + 24, home)]
+            else:
+                plan += [(b + 17.5, b + 24, home)]
+        else:
+            plan += [(b, b + 24, home)]
+    t, x, y = [], [], []
+    for k, (s0, s1, (px, py)) in enumerate(plan):
+        ts = np.arange(s0 * H, s1 * H, 300.0)
+        t += list(ts); x += list(px + rng.normal(0, 8, len(ts))); y += list(py + rng.normal(0, 8, len(ts)))
+        if k + 1 < len(plan) and plan[k + 1][2] != (px, py):  # straight-line trip to the next stay
+            nx, ny = plan[k + 1][2]
+            tt = np.arange(s1 * H, plan[k + 1][0] * H, 60.0)
+            f = (tt - s1 * H) / max((plan[k + 1][0] - s1) * H, 1)
+            t += list(tt); x += list(px + (nx - px) * f); y += list(py + (ny - py) * f)
+    lat, lon = from_enu(np.array(x), np.array(y), 40.0, -75.0)
+    return pl.DataFrame({"id": uid, "lat": lat, "lon": lon, "timestamp": ((T0 + np.array(t)) * 1e6).astype(np.int64),
+                         "horizontalAccuracy": 9.4})
 
 
 @pytest.fixture(scope="module")
 def result():
-    area = synthetic_grid(n=20, seed=1)
-    sim = simulate(area, SimConfig(n_agents=4, n_days=14, seed=3, meet_rate_per_week=2.0))
-    ev = schema.validate_events(io.shape_view(sampling.sample(sim, area, "gps", seed=0), "2"))
+    ev = pl.concat([_routine("a", (0, 0), (3000, 500), (1200, -900), 1),
+                    _routine("b", (-2000, 1500), (3000, 500), (-500, 2500), 2),
+                    _routine("c", (4000, -3000), (-1000, -1000), (3500, -2500), 3)])
+    ev = schema.validate_events(ev.with_columns(pl.col("timestamp").cast(pl.Datetime("us", "UTC"))))
     return pipeline.analyze(ev, profile="gps", geocoder=None)
 
 

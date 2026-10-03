@@ -157,7 +157,7 @@ x = Δλ · R cos φ₀,   y = Δφ · R,   R = 6,371,008.8 m
 
 ## 4. Dataset shapes from one master table (`src/dwells/io.py`)
 
-The synthetic generator writes one master frame per dataset (`generator/sampling.py`, module docstring lines 16-23) with:
+The synthetic generator (on branch `tools/ua-tuning`, `generator/sampling.py`) writes one master frame per dataset with:
 
 - `lat, lon`: the reported position.
 - `sig_a ≥ sig_b`: the **reported** 1-sigma axes (m).
