@@ -327,7 +327,7 @@ def _map(ds, uid, live, sel, extent, d0, d1):
 def _selection_views(ds, uid, live, sel, vall):
     t = data.tables(ds, uid, live)
     pid, vid = sel["place_id"], sel["visit_id"]
-    p = t["places"].filter(pl.col("place_id") == pid)
+    p = t["places"].filter(pl.col("place_id").eq_missing(pid))  # pid may be None (no selection)
     labels = {r["place_id"]: data.place_label(r) for r in t["places"].iter_rows(named=True)}
     if p.height:
         r = p.row(0, named=True)
@@ -346,7 +346,7 @@ def _selection_views(ds, uid, live, sel, vall):
         ], style={"fontSize": 12, "lineHeight": "1.6"})
     else:
         place_card = "Select a place"
-    v = t["visits"] if "all" in (vall or []) else t["visits"].filter(pl.col("place_id") == pid)
+    v = t["visits"] if "all" in (vall or []) else t["visits"].filter(pl.col("place_id").eq_missing(pid))
     vrows = [{"start": fmt_ts(r["start_ts"]), "end": fmt_ts(r["end_ts"]), "duration": fmt_dur(r["duration_s"]),
               "arrived between": f"{fmt_ts(r['arrive_after'])} – {fmt_ts(r['arrive_by'])}",
               "left between": f"{fmt_ts(r['depart_after'])} – {fmt_ts(r['depart_by'])}",
@@ -357,7 +357,7 @@ def _selection_views(ds, uid, live, sel, vall):
              for r in v.sort("start_ts", descending=True).iter_rows(named=True)]
     vcols = [{"name": c, "id": c} for c in ("start", "end", "duration", "arrived between", "left between", "reports",
                                             "precise", "confidence", "center ±m", "from", "to", "flags", "place")]
-    nx = t["next_places"].filter(pl.col("from_place") == pid)
+    nx = t["next_places"].filter(pl.col("from_place").eq_missing(pid))
     nrows = [{"rank": r["rank"], "next place": labels.get(r["to_place"], str(r["to_place"])),
               "probability": f"{r['prob']:.0%}", "at least": f"{r['prob_low']:.0%}", "departures seen": r["n_from"]}
              for r in nx.iter_rows(named=True)]

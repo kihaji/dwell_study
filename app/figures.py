@@ -24,7 +24,7 @@ def _empty(msg: str) -> go.Figure:
 
 
 def radar(t, place_id, visit_id) -> go.Figure:
-    p = t["places"].filter(pl.col("place_id") == place_id)
+    p = t["places"].filter(pl.col("place_id").eq_missing(place_id))  # place_id may be None (no selection)
     if p.height == 0:
         return _empty("Select a place")
     r = p.row(0, named=True)
@@ -62,7 +62,7 @@ def weekday_heatmap(t, top: int = 10) -> go.Figure:
 
 
 def weekday_hour_heatmap(t, place_id) -> go.Figure:
-    p = t["places"].filter(pl.col("place_id") == place_id)
+    p = t["places"].filter(pl.col("place_id").eq_missing(place_id))  # place_id may be None (no selection)
     if p.height == 0:
         return _empty("Select a place")
     z = np.asarray(p["weekday_hour_presence_s"][0].to_list()).reshape(7, 24) / 3600
