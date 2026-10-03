@@ -11,7 +11,11 @@ from dwells import geo, schema
 def quality(events: pl.DataFrame, assigned: pl.DataFrame, visits: pl.DataFrame,
             speed_limit_ms: float = 60.0) -> pl.DataFrame:
     """``events`` = validated input; ``assigned`` = the events output table (sigma_m,
-    coarse, visit_id, place_id) in the same row order."""
+    coarse, visit_id, place_id, location_source) in the same row order.
+
+    With a location_source column: source_coverage = share of reports with a label other
+    than unknown; source_mismatch_frac = share whose label contradicts the stated accuracy
+    (gps claiming 1-sigma > 100 m, ip claiming < 1 km)."""
     e = assigned.with_columns(
         gap=pl.col("timestamp").diff().over("id").dt.total_seconds().cast(pl.Float64),
         same_pos=(pl.col("lat") == pl.col("lat").shift(1).over("id")) & (pl.col("lon") == pl.col("lon").shift(1).over("id")),
@@ -46,5 +50,14 @@ def quality(events: pl.DataFrame, assigned: pl.DataFrame, visits: pl.DataFrame,
         events_per_active_day=pl.col("n_events") / pl.col("active_days"),
         shape=pl.lit(schema.event_shape(events), dtype=pl.Int8),
     ).drop("_hours")
+    if "location_source" in events.columns:
+        # labels that contradict a *stated* accuracy (none can be judged for centerpoint-only data)
+        stated = schema.event_shape(events) > 1
+        lab, sig = pl.col("location_source"), pl.col("sigma_m")
+        mismatch = (((lab == "gps") & (sig > 100)) | ((lab == "ip") & (sig < 1000))) if stated else pl.lit(None)
+        src = e.with_columns(known=lab != "unknown", mismatch=mismatch).group_by("id").agg(
+            pl.col("known").mean().alias("source_coverage"),
+            pl.col("mismatch").cast(pl.Float64).mean().alias("source_mismatch_frac"))
+        q = q.join(src, on="id", how="left")
     vp = visits.group_by("id").agg(pl.len().alias("visits"), pl.col("place_id").n_unique().alias("places"))
     return q.join(vp, on="id", how="left").with_columns(pl.col("visits", "places").fill_null(0))

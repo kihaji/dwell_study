@@ -49,7 +49,8 @@ HELP = {
     "anomalies": "Visits that break the usual routine: unusual hour, unusual length, an unusual weekday, or a "
                  "rarely visited place.",
     "data_quality": "How much and how good the input data is for this identifier. Low reporting rates, large "
-                    "errors or many implausible jumps reduce the reliability of everything else.",
+                    "errors, many implausible jumps or location-source labels that conflict with the stated "
+                    "accuracy reduce the reliability of everything else.",
     "tuning": "Re-run detection for this identifier with different settings to see how sensitive the "
               "results are. Does not change the saved results.",
     "same_place_tolerance": "How far (in combined error widths) a report may sit from the place center and "

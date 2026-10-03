@@ -32,13 +32,16 @@ def geocoder_for(dataset: str):
     return None
 
 
-def build(dataset: str, shape: str = "3_mixed", profile: str = "auto", min_duration_s: float = 900) -> dict:
+def build(dataset: str, shape: str = "3_mixed", profile: str = "auto", min_duration_s: float = 900,
+          with_source: bool = True) -> dict:
     t = time.time()
     prof = io.profile_of(dataset) if profile == "auto" else profile
-    ev = io.load_events(io.dataset_dirs()[dataset], shape)
+    # repo datasets carry the generator's per-report source -> location_source labels, as an
+    # upload with that optional field would (docs/experiments/location_source.md)
+    ev = io.load_events(io.dataset_dirs()[dataset], shape, with_source=with_source)
     params = params_for(prof, min_duration_s)
     tables = pipeline.analyze(ev, params=params, geocoder=geocoder_for(dataset))
-    meta = {"dataset": dataset, "shape": shape, "profile": prof, "params": params,
+    meta = {"dataset": dataset, "shape": shape, "with_source": with_source, "profile": prof, "params": params,
             "rows": {k: v.height for k, v in tables.items()}, "seconds": round(time.time() - t, 1)}
     pipeline.write(tables, OUT / dataset, meta)
     return meta
@@ -50,10 +53,11 @@ def main():
     ap.add_argument("--shape", default="3_mixed")
     ap.add_argument("--profile", default="auto")
     ap.add_argument("--md", type=float, default=900)
+    ap.add_argument("--no-source", action="store_true", help="omit the optional location_source labels")
     a = ap.parse_args()
     for ds in io.dataset_dirs():
         if any(fnmatch.fnmatch(ds, p) for p in a.datasets.split(",")):
-            m = build(ds, a.shape, a.profile, a.md)
+            m = build(ds, a.shape, a.profile, a.md, not a.no_source)
             print(f"{ds:24s} {m['rows']} ({m['seconds']}s)", flush=True)
 
 

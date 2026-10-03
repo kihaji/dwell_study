@@ -24,7 +24,14 @@ One row of input data: a device was somewhere at a time. Reports are imperfect:
   end, extend or move a visit, and they do not set its arrival/departure window. They can
   only confirm that the device was "somewhere around here". The second condition keeps a
   source whose reports are all imprecise, such as cell-tower data, from being discarded
-  entirely.
+  entirely. Reports whose source is labelled **IP geolocation** or **user-provided** (an
+  entered or registered address) are always treated as vague, whatever accuracy they
+  claim, because they are not measurements of where the device was.
+- **Location source.** When the data says how each report was produced (satellite GPS,
+  network positioning from Wi-Fi or cell towers, a fused blend, IP geolocation, or a
+  user-provided address), the app uses it: to treat IP and user-provided locations as
+  vague, and to assume a typical accuracy for reports that state none. Hover over a report
+  on the map to see its source.
 - **Gaps.** Devices report irregularly. Some report every few seconds, others a few times
   a day. Silence does not mean the device moved.
 
@@ -281,6 +288,12 @@ How much to trust everything else. Key indicators:
 - **implausible jumps:** reports that would require impossible speeds. A high share means
   bad positions that can create false visits.
 - **reports in visits:** the share of reports that ended up in a visit.
+- **source labelled:** the share of reports that say how they were produced (n/a when the
+  data has no location-source field). Low values mean most reports fall back to a generic
+  accuracy assumption.
+- **label vs accuracy conflicts:** reports whose source label contradicts their stated
+  accuracy, for example "GPS" with a 3 km error or "IP" claiming 50 m. More than about 1%
+  suggests a problem in how the data was labelled or converted.
 
 The charts show reports per day (all vs. inside visits) and the distribution of stated
 accuracy (log scale: 10 m, 100 m, 1 km...).

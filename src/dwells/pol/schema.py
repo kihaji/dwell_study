@@ -14,7 +14,7 @@ RING = pl.List(pl.List(pl.Float64))
 
 EVENTS = {
     "id": pl.String, "event_idx": pl.Int64, "timestamp": TS, "lat": pl.Float64, "lon": pl.Float64,
-    "sigma_m": pl.Float64, "coarse": pl.Boolean, "visit_id": pl.Int64, "place_id": pl.Int64,
+    "location_source": pl.String, "sigma_m": pl.Float64, "coarse": pl.Boolean, "visit_id": pl.Int64, "place_id": pl.Int64,
 }
 
 VISITS = {
@@ -70,6 +70,7 @@ QUALITY = {
     "sigma_p50_m": pl.Float64, "sigma_p95_m": pl.Float64, "coarse_frac": pl.Float64,
     "duplicate_frac": pl.Float64, "stale_frac": pl.Float64, "speed_outlier_frac": pl.Float64,
     "visits": pl.Int64, "places": pl.Int64, "events_in_visits_frac": pl.Float64,
+    "source_coverage": pl.Float64, "source_mismatch_frac": pl.Float64,
 }
 
 TABLES = {"events": EVENTS, "visits": VISITS, "places": PLACES, "transitions": TRANSITIONS,

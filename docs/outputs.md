@@ -29,7 +29,8 @@ anomalies.visit_id -> visits.visit_id
 |---|---|
 | id, timestamp, lat, lon | the input report |
 | event_idx | position of the report within its identifier (0-based, time order) |
-| sigma_m | its 1σ error in meters after normalizing the accuracy fields (or the assumed default) |
+| location_source | the optional provenance label as supplied (`gps`, `network`, `fused`, `ip`, `user_provided`, `unknown`); null when the input had no such column |
+| sigma_m | its 1σ error in meters after normalizing the accuracy fields (or the assumed value for its location_source / the default) |
 | coarse | true when too vague to locate a stay (see the data contract) |
 | visit_id, place_id | the visit/place it belongs to (null = traveling, an outlier, or an unassigned coarse fix) |
 
@@ -118,3 +119,5 @@ One row per flagged visit:
 | stale_frac | same position as the previous report at a new time |
 | speed_outlier_frac | implausible jumps (> 60 m/s and farther than 3× the combined error) |
 | visits, places, events_in_visits_frac | outcome summary |
+| source_coverage | share of reports with a location_source other than unknown (null without the column) |
+| source_mismatch_frac | share of reports whose label contradicts the stated accuracy: gps with 1σ > 100 m, ip with 1σ < 1 km (null for centerpoint-only data or without the column) |

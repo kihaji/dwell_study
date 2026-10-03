@@ -99,7 +99,8 @@ for centerpoint-only data:
 | k_break | 3 | consecutive misses that end a stay |
 | confirm_s | 900 | ...or this long away before being seen back |
 | coarse_sigma_m / coarse_rel | 1000 / 3 | fixes worse than 1 km (1σ) and 3× the id's typical fix are not used to locate stays; app label **vague-report cutoff** (sets coarse_sigma_m) |
-| default_sigma_m | gps 10, cdr 300, adtech 300, mixed 30 | error assumed when no accuracy fields exist |
+| default_sigma_m | gps 10, cdr 300, adtech 300, mixed 30 | error assumed when no accuracy fields exist and no usable location_source label |
+| source_sigma | gps 10, network 300, fused 30 | error assumed per location_source label for reports without accuracy fields ([experiments/location_source.md](experiments/location_source.md)); ip / user_provided reports are always vague (`coarse_sources`) |
 
 The base matched or beat the per-source tuned values on held-out data, except adtech by
 0.011 (0.498 vs 0.509), so it is the recommended default. Use `mixed` when the source is

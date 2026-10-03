@@ -45,7 +45,8 @@ def analyze(events: pl.DataFrame, profile: str = "mixed", params: dict | None = 
     visit_of_event = np.array([lab2visit.get(int(lb), -1) if lb >= 0 else -1 for lb in labels], np.int64)
 
     # --- event assignment table
-    ev = events.select("id", "timestamp", "lat", "lon").with_columns(
+    src = pl.col("location_source") if "location_source" in events.columns else pl.lit(None, dtype=pl.String)
+    ev = events.select("id", "timestamp", "lat", "lon", src.alias("location_source")).with_columns(
         event_idx=pl.int_range(pl.len()).over("id").cast(pl.Int64),
         sigma_m=pl.Series(sigma), coarse=pl.Series(coarse),
         visit_id=pl.Series(visit_of_event).replace(-1, None).cast(pl.Int64),

@@ -48,7 +48,7 @@ def run_live(dataset: str, uid: str, params: dict) -> str:
     key = live_key(dataset, uid, params)
     if key not in _live:
         m = meta(dataset)
-        ev = io.load_events(io.dataset_dirs()[dataset], m["shape"], ids=[uid])
+        ev = io.load_events(io.dataset_dirs()[dataset], m["shape"], ids=[uid], with_source=m.get("with_source", False))
         _live[key] = pipeline.analyze(ev, params=params, geocoder=geocoder_for(dataset))
         if len(_live) > 16:
             _live.pop(next(iter(_live)))

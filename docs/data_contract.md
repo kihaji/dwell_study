@@ -27,6 +27,20 @@ Optional error fields (strongly recommended for anything but dense GPS):
 The 0.68, 0.95 and mixed variants of the same data gave identical results, so the
 normalization is correct **as long as each value is labelled with its true meaning**.
 
+Optional provenance field (recommended whenever the feed states it):
+
+| field | values | rule |
+|---|---|---|
+| `location_source` | `gps`, `network`, `fused`, `ip`, `user_provided`, `unknown` (null = unknown) | How the fix was produced, using the Android provider terms (`gps`, `network`, `fused`). Adtech feeds following OpenRTB map `geo.type` 1 → `gps`, 2 → `ip`, 3 → `user_provided`. CDR and Wi-Fi/cell positioning → `network`. iOS exposes no provider, so use `fused` or leave it unknown. A cached / last-known fix keeps the label of the original fix. |
+
+What the detector does with it ([experiments/location_source.md](experiments/location_source.md)):
+* `ip` and `user_provided` reports are always treated as vague: they never start, end,
+  extend or move a dwell, whatever accuracy they claim. In held-out adtech data, IP
+  reports claiming a 50–200 m accuracy cost 0.08 F1 without the label and nothing with it.
+* For reports **without** accuracy fields, the label sets the assumed 1σ: gps 10 m, network
+  300 m, fused 30 m (untested: no synthetic fused data). Stated accuracy always wins over
+  the label.
+
 ## 2. Accuracy semantics: the most consequential pitfall
 
 Different sources mean different things by "accuracy":
@@ -75,6 +89,15 @@ Rules:
   ignored and detection collapses.
 * Better still, attach at least a per-source nominal `horizontalAccuracy`. Held-out
   F1 with error fields versus centerpoint only: CDR 0.607 vs 0.497, adtech 0.497 vs 0.332.
+* If accuracy is unavailable, supply `location_source`. The assumed error is then chosen
+  per report, which also handles mixed uploads. Held-out centerpoint-only F1:
+
+  | | GPS | CDR | adtech |
+  |---|---|---|---|
+  | type unknown (assumed 30 m) | 0.980 | 0.387 | 0.278 |
+  | analyst states the type | 0.980 | 0.497 | 0.332 |
+  | `location_source` on every report | 0.980 | 0.497 | **0.400** |
+  | `location_source` on 50% of reports | 0.981 | 0.436 | 0.329 |
 
 ## 4. Defects and how much they matter
 
@@ -111,3 +134,5 @@ Data quality panel) with the signals above. Flag ids for review when any of thes
 | `duplicate_frac` | > 20% | feed merging issue upstream |
 | `coarse_frac` | > 50% | mostly cell/IP-level fixes; dwells will be few and vague |
 | `sigma_p50_m` | far from the expected source accuracy | semantics or unit problem (§2) |
+| `source_coverage` | < 50% (when the feed should carry labels) | most reports fall back to the default assumption |
+| `source_mismatch_frac` | > 1% | labels contradict stated accuracy (`gps` claiming > 100 m 1σ, `ip` claiming < 1 km): a labelling or accuracy-semantics problem upstream |

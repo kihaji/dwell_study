@@ -60,11 +60,11 @@ def shape_view(master: pl.DataFrame, shape: str, keep_truth: bool = False,
 
 
 def load_events(dataset_dir: str | Path, shape: str = "1", keep_truth: bool = False,
-                ids: list[str] | None = None) -> pl.DataFrame:
+                ids: list[str] | None = None, with_source: bool = False) -> pl.DataFrame:
     lf = pl.scan_parquet(Path(dataset_dir) / "events.parquet")
     if ids is not None:
         lf = lf.filter(pl.col("id").is_in(ids))
-    return schema.validate_events(shape_view(lf.collect(), shape, keep_truth))
+    return schema.validate_events(shape_view(lf.collect(), shape, keep_truth, with_source))
 
 
 def load_truth(dataset_dir: str | Path, table: str) -> pl.DataFrame:

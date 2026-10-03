@@ -300,7 +300,10 @@ def _quality(ds, uid, live):
              ("typical accuracy", f"{q.get('sigma_p50_m', 0):.0f} m"), ("coarse reports", f"{100 * q.get('coarse_frac', 0):.0f}%"),
              ("duplicates", f"{100 * q.get('duplicate_frac', 0):.1f}%"), ("repeated positions", f"{100 * q.get('stale_frac', 0):.1f}%"),
              ("implausible jumps", f"{100 * q.get('speed_outlier_frac', 0):.1f}%"),
-             ("reports in visits", f"{100 * q.get('events_in_visits_frac', 0):.0f}%")]
+             ("reports in visits", f"{100 * q.get('events_in_visits_frac', 0):.0f}%"),
+             ("source labelled", "n/a" if q.get("source_coverage") is None else f"{100 * q['source_coverage']:.0f}%"),
+             ("label vs accuracy conflicts", "n/a" if q.get("source_mismatch_frac") is None
+              else f"{100 * q['source_mismatch_frac']:.1f}%")]
     stats = html.Div([html.Div([html.B(f"{k}: "), str(v)]) for k, v in items],
                      style={"display": "grid", "gridTemplateColumns": "repeat(3, 1fr)", "fontSize": 12})
     f1, f2 = figures.quality_figs(t, t["events"])

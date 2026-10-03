@@ -142,6 +142,8 @@ tuned base preset.
 | `coarse_sigma_m`, `coarse_rel` | 1000, 3 | coarse-fix rule (see above) |
 | `min_events` | 2 | informative fixes needed for a dwell |
 | `default_sigma_m` | 10 | 1σ assumed for centerpoint-only data (presets: GPS 10, CDR / adtech 300) |
+| `source_sigma` | presets: gps 10, network 300, fused 30 | 1σ assumed per `location_source` label for reports without accuracy fields (overrides `default_sigma_m`) |
+| `coarse_sources` | `ip`, `user_provided` | `location_source` labels that are always coarse, whatever accuracy they claim |
 
 ## Use of positional uncertainty
 

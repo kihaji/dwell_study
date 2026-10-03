@@ -64,3 +64,43 @@ def test_generator_sources_map_to_location_source():
     out = io.shape_view(master, "1", with_source=True)
     # stale (cached) fixes keep the label of the report they repeat
     assert out["location_source"].to_list() == ["gps", "gps", "network", "network", "ip", "ip", "network"]
+
+
+def test_presets_carry_source_sigma():
+    from dwells.presets import PRESETS
+
+    for p in PRESETS.values():
+        assert p["source_sigma"] == {"gps": 10.0, "network": 300.0, "fused": 30.0}
+
+
+def _pipeline_events(sources, acc):
+    from dwells.geo import from_enu as fe
+
+    n = len(sources)
+    lat, lon = fe(np.zeros(n), np.zeros(n), 40.0, -75.0)
+    df = pl.DataFrame({"id": "a", "lat": lat, "lon": lon, "timestamp": (T0 + np.arange(n) * 300) * 1_000_000,
+                       "horizontalAccuracy": acc, "location_source": sources})
+    return schema.validate_events(df.with_columns(pl.col("timestamp").cast(pl.Datetime("us", "UTC"))))
+
+
+def test_pipeline_carries_location_source_and_quality():
+    from dwells.pol import pipeline
+
+    # 12 reports: gps (one claiming 3 km), network, and an ip report claiming 50 m
+    src = ["gps"] * 8 + ["network"] * 2 + ["ip", "unknown"]
+    acc = [12.0] * 7 + [3532.0] + [118.0] * 2 + [58.9, 12.0]
+    t = pipeline.analyze(_pipeline_events(src, acc), profile="mixed")
+    assert t["events"]["location_source"].to_list() == src
+    q = t["quality"].row(0, named=True)
+    assert q["source_coverage"] == pytest.approx(11 / 12)
+    # gps claiming > 100 m (1 of 12) and ip claiming < 1 km (1 of 12) contradict their label
+    assert q["source_mismatch_frac"] == pytest.approx(2 / 12)
+
+
+def test_pipeline_without_location_source_leaves_nulls():
+    from dwells.pol import pipeline
+
+    ev = _pipeline_events(["gps"] * 6, [12.0] * 6).drop("location_source")
+    t = pipeline.analyze(ev, profile="mixed")
+    assert t["events"]["location_source"].null_count() == 6
+    assert t["quality"]["source_coverage"][0] is None

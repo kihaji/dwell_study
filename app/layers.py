@@ -28,7 +28,8 @@ def build(t: dict[str, pl.DataFrame], extent: list[str], sel_place: int | None, 
     # raw events: members colored by place, others grey
     pts = [{"p": [r["lon"], r["lat"]], "s": r["sigma_m"], "visit_id": r["visit_id"], "place_id": r["place_id"],
             "c": hex_rgb(colors.get(r["place_id"], "#616161"), 200 if r["place_id"] is not None else 90),
-            "time": str(r["timestamp"])[:19], "acc_m": round(r["sigma_m"], 1)}
+            "time": str(r["timestamp"])[:19], "acc_m": round(r["sigma_m"], 1),
+            "source": r.get("location_source") or "unknown"}
            for r in ev.iter_rows(named=True)]
     layers.append(ScatterplotLayer(id="events", data=pts, get_position="@@=p", get_radius=3, radius_min_pixels=2,
                                    radius_max_pixels=6, get_fill_color="@@=c", pickable=True))

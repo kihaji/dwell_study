@@ -12,10 +12,14 @@ from __future__ import annotations
 # except adtech by ~0.01): outlier-tolerant (3 consecutive misses) yet a stay still ends
 # after 15 min away; fixes vaguer than 1 km (1-sigma) AND 3x vaguer than the id's typical
 # fix never define a dwell (a uniformly coarse source such as CDR is not discarded).
+# Assumed 1-sigma by location_source label, used only for reports without accuracy fields
+# (docs/experiments/location_source.md). ip / user_provided reports are always vague
+# (ua_mahalanobis coarse_sources default).
+SOURCE_SIGMA = {"gps": 10.0, "network": 300.0, "fused": 30.0}
 BASE = {"radius_m": 75, "max_gap_s": 43200, "gate_p": 0.99, "k_break": 3, "confirm_s": 900,
-        "coarse_sigma_m": 1000.0, "coarse_rel": 3.0, "min_events": 2}
-# default_sigma_m only matters for centerpoint-only data (no accuracy fields): it should be
-# the source's typical 1-sigma error (keep it below coarse_sigma_m).
+        "coarse_sigma_m": 1000.0, "coarse_rel": 3.0, "min_events": 2, "source_sigma": SOURCE_SIGMA}
+# default_sigma_m only matters for centerpoint-only reports with no usable location_source
+# label: it should be the source's typical 1-sigma error (keep it below coarse_sigma_m).
 PRESETS: dict[str, dict] = {
     "gps": BASE | {"default_sigma_m": 10.0},
     "cdr": BASE | {"default_sigma_m": 300.0},
